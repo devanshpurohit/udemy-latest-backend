@@ -33,7 +33,7 @@ app.use(helmet());
 app.use(
   cors({
     origin: process.env.NODE_ENV === 'production' 
-      ? ['https://yourdomain.com', 'https://www.yourdomain.com'] 
+      ? ['https://udemy-admin-frontend-5r5w.vercel.app', 'https://udemy-website-frontend.vercel.app', 'https://yourdomain.com', 'https://www.yourdomain.com'] 
       : ['http://localhost:3000', 'http://localhost:5173', 'http://localhost:5174', 'http://localhost:5175'],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
