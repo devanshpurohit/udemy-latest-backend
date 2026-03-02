@@ -78,8 +78,13 @@ const userSchema = new mongoose.Schema({
   timestamps: true
 });
 
+// Add indexes for performance optimization
+userSchema.index({ wishlist: 1 });
+// Note: _id index is automatically created by MongoDB - no need to specify
+
 // Hash password before saving
 userSchema.pre('save', async function(next) {
+    // Skip password hashing if password is not modified
     if (!this.isModified('password')) return next();
     
     try {
@@ -116,3 +121,6 @@ userSchema.methods.getProfile = function() {
 };
 
 module.exports = mongoose.model('User', userSchema);
+
+// Note: Indexes are automatically created by MongoDB
+// No need for explicit index creation in this file

@@ -164,6 +164,11 @@ const courseSchema = new mongoose.Schema({
   timestamps: true
 });
 
+// Add indexes for performance optimization
+courseSchema.index({ title: 1 });
+courseSchema.index({ status: 1 });
+// Note: _id index is automatically created by MongoDB - no need to specify
+
 // Calculate average rating
 courseSchema.methods.calculateAverageRating = function() {
   if (this.ratings.length === 0) {
@@ -190,3 +195,6 @@ courseSchema.methods.updateTotalRevenue = function() {
 courseSchema.index({ title: 'text', description: 'text', tags: 'text' });
 
 module.exports = mongoose.model('Course', courseSchema);
+
+// Note: Indexes are automatically created by MongoDB
+// No need for explicit index creation in this file

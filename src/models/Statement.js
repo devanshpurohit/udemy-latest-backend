@@ -56,7 +56,7 @@ const statementSchema = new mongoose.Schema({
 });
 
 // Indexes for better query performance
-statementSchema.index({ orderId: 1 });
+// Note: orderId already has unique index from schema definition, so no need to add another index
 statementSchema.index({ student: 1 });
 statementSchema.index({ instructor: 1 });
 statementSchema.index({ course: 1 });

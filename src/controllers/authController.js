@@ -1,4 +1,5 @@
 const User = require('../models/User');
+const Course = require('../models/Course');
 const bcrypt = require('bcryptjs');
 const { uploadSingle } = require('../middleware/upload');
 const { generateToken } = require('../utils/generateToken');
@@ -222,9 +223,9 @@ const login = async (req, res) => {
       });
     }
 
-    // Update last login
+    // Update last login - skip pre-save middleware to avoid password hashing
     user.lastLogin = new Date();
-    await user.save();
+    await user.save({ validateBeforeSave: false, pre: false });
 
     console.log('✅ Backend - User authenticated, generating token');
 
@@ -242,7 +243,7 @@ const login = async (req, res) => {
           role: user.role,
           profile: {
             ...user.profile,
-            profileImage: user.profile?.profileImage || "https://picsum.photos/seed/user123/80/80.jpg"
+            profileImage: user.profile?.profileImage
           }
         },
         token
@@ -397,11 +398,15 @@ const updateProfile = async (req, res) => {
         'profile.lastName': lastName || user.profile.lastName,
         'profile.bio': bio || user.profile.bio,
         'profile.phone': phone || user.profile.phone,
-        'profile.profileImage': profileImage || user.profile.profileImage
+        'profile.profileImage': profileImage || user.profile.profileImage || null
       }
     };
     
     console.log('Backend - Update data with $set:', updateData);
+    console.log('Backend - Profile image received:', profileImage?.substring(0, 50) + '...');
+    console.log('Backend - Profile image length:', profileImage?.length || 0);
+    console.log('Backend - Is base64 image?', profileImage?.startsWith('data:image/'));
+    console.log('Backend - Profile image type:', typeof profileImage);
     console.log('Backend - User ID:', req.user.id);
     console.log('Backend - About to save user to database...');
     
@@ -413,10 +418,12 @@ const updateProfile = async (req, res) => {
     
     console.log('Backend - Saved user to database:', savedUser);
     console.log('Backend - Save operation completed. User profile after save:', savedUser.profile);
+    console.log('Backend - Saved profile image:', savedUser.profile?.profileImage);
     
     // Verify save by immediately fetching
     const verificationUser = await User.findById(req.user.id);
     console.log('Backend - Verification fetch after save:', verificationUser.profile);
+    console.log('Backend - Verification profile image:', verificationUser.profile?.profileImage);
     
     res.status(200).json({
       success: true,
@@ -569,6 +576,84 @@ const logout = async (req, res) => {
   }
 };
 
+// @desc    Add course to wishlist
+// @route   POST /api/users/wishlist/:courseId
+// @access  Private
+const addToWishlist = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+
+    if (!user.wishlist.includes(req.params.courseId)) {
+      user.wishlist.push(req.params.courseId);
+      await user.save();
+    }
+
+    res.json({ success: true, message: 'Course added to wishlist' });
+  } catch (error) {
+    console.error('Add to wishlist error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Server error while adding to wishlist' 
+    });
+  }
+};
+
+// @desc    Get user's wishlist
+// @route   GET /api/users/wishlist
+// @access  Private
+const getWishlist = async (req, res) => {
+  try {
+    console.time("wishlistQuery");
+    
+    // Ultra Optimized Version - Direct Course Query
+    const user = await User.findById(req.user.id)
+      .select("wishlist")
+      .lean();
+
+    const courses = await Course.find({
+      _id: { $in: user.wishlist }
+    })
+      .select("title price thumbnail courseImage rating")
+      .lean();
+
+    console.timeEnd("wishlistQuery");
+
+    res.json({
+      success: true,
+      data: courses
+    });
+  } catch (error) {
+    console.error('Get wishlist error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Server error while fetching wishlist' 
+    });
+  }
+};
+
+// @desc    Remove course from wishlist
+// @route   DELETE /api/users/wishlist/:courseId
+// @access  Private
+const removeFromWishlist = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    
+    user.wishlist = user.wishlist.filter(
+      courseId => courseId.toString() !== req.params.courseId
+    );
+    
+    await user.save();
+
+    res.json({ success: true, message: 'Course removed from wishlist' });
+  } catch (error) {
+    console.error('Remove from wishlist error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Server error while removing from wishlist' 
+    });
+  }
+};
+
 module.exports = {
   register,
   login,
@@ -579,5 +664,8 @@ module.exports = {
   changePassword,
   verifyEmail,
   forgotPassword,
-  resetPassword
+  resetPassword,
+  addToWishlist,
+  getWishlist,
+  removeFromWishlist
 };

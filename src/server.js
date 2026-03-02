@@ -23,6 +23,11 @@ const publicRoutes = require('./routes/public');
 const app = express();
 
 /* =======================
+   TRUST PROXY FOR RATE LIMITING
+======================= */
+app.set('trust proxy', 1);
+
+/* =======================
    SECURITY
 ======================= */
 app.use(helmet());
