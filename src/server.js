@@ -19,6 +19,7 @@ const adminRoutes = require('./routes/admin');
 const statementRoutes = require('./routes/statements');
 const chatRoutes = require('./routes/chat');
 const publicRoutes = require('./routes/public');
+const purchaseRoutes = require('./routes/purchase');
 
 const app = express();
 
@@ -224,6 +225,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/statements', statementRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/public', publicLimiter, publicRoutes); // Apply rate limit then routes
+app.use('/api', purchaseRoutes);
 
 /* =======================
    HEALTH

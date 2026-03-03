@@ -1,0 +1,97 @@
+const User = require('../models/User');
+const Course = require('../models/Course');
+
+// @desc    Purchase course (fake payment)
+// @route   POST /api/purchase/:courseId
+// @access  Private
+const purchaseCourse = async (req, res) => {
+  try {
+    const { courseId } = req.params;
+    const userId = req.user?.id || req.user?._id;
+
+    const course = await Course.findById(courseId);
+    if (!course) {
+      return res.status(404).json({ success: false, message: 'Course not found' });
+    }
+
+    // If your app only allows published purchases
+    if (course.status && course.status !== 'published') {
+      return res.status(400).json({ success: false, message: 'Course is not available for purchase' });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(401).json({ success: false, message: 'User not found' });
+    }
+
+    const alreadyPurchased = (user.purchasedCourses || []).some(
+      (id) => String(id) === String(courseId)
+    );
+    if (alreadyPurchased) {
+      return res.json({ success: false, message: 'Already purchased' });
+    }
+
+    user.purchasedCourses = user.purchasedCourses || [];
+    user.purchasedCourses.push(courseId);
+
+    // Keep existing "learning access" logic working
+    if (typeof user.enrollInCourse === 'function') {
+      await user.enrollInCourse(courseId);
+    } else {
+      user.enrolledCourses = user.enrolledCourses || [];
+      if (!user.enrolledCourses.some((id) => String(id) === String(courseId))) {
+        user.enrolledCourses.push(courseId);
+      }
+      await user.save();
+    }
+
+    // Also mark in course.enrolledStudents (frontend checks this)
+    course.enrolledStudents = course.enrolledStudents || [];
+    const alreadyInCourse = course.enrolledStudents.some(
+      (id) => String(id) === String(userId)
+    );
+    if (!alreadyInCourse) {
+      course.enrolledStudents.push(userId);
+      if (typeof course.updateTotalEnrollments === 'function') {
+        course.updateTotalEnrollments();
+      }
+      await course.save();
+    }
+
+    return res.json({
+      success: true,
+      message: 'Course purchased successfully'
+    });
+  } catch (error) {
+    console.error('Purchase course error:', error);
+    return res.status(500).json({ success: false, message: 'Server error while purchasing course' });
+  }
+};
+
+// @desc    Get purchased courses
+// @route   GET /api/my-courses
+// @access  Private
+const getMyCourses = async (req, res) => {
+  try {
+    const userId = req.user?.id || req.user?._id;
+
+    const user = await User.findById(userId).populate('purchasedCourses');
+    if (!user) {
+      return res.status(401).json({ success: false, message: 'User not found' });
+    }
+
+    return res.json({
+      success: true,
+      courses: user.purchasedCourses || []
+    });
+  } catch (error) {
+    console.error('Get my courses error:', error);
+    return res.status(500).json({ success: false, message: 'Server error while fetching my courses' });
+  }
+};
+
+module.exports = {
+  purchaseCourse,
+  getMyCourses
+};
+

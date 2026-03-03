@@ -1,5 +1,87 @@
 const mongoose = require('mongoose');
 
+// Quiz Schema
+const quizSchema = new mongoose.Schema({
+  question: {
+    type: String,
+    required: true
+  },
+  options: {
+    type: [String],
+    required: true,
+    validate: {
+      validator: function(options) {
+        return options.length >= 2 && options.length <= 6;
+      },
+      message: 'Quiz must have between 2 and 6 options'
+    }
+  },
+  correctAnswer: {
+    type: Number,
+    required: true,
+    min: 0,
+    validate: {
+      validator: function(answer) {
+        return answer < this.options.length;
+      },
+      message: 'Correct answer must be a valid option index'
+    }
+  }
+}, { _id: true });
+
+// Lesson Schema
+const lessonSchema = new mongoose.Schema({
+  title: {
+    type: String,
+    required: true
+  },
+  description: {
+    type: String
+  },
+  videoUrl: {
+    type: String,
+    required: true
+  },
+  duration: {
+    type: Number, // in minutes
+    required: true,
+    min: 1
+  },
+  order: {
+    type: Number,
+    required: true
+  },
+  isPreview: {
+    type: Boolean,
+    default: false
+  },
+  quizzes: [quizSchema],
+  resources: [{
+    name: String,
+    url: String,
+    type: {
+      type: String,
+      enum: ['pdf', 'video', 'link', 'other']
+    }
+  }]
+}, { _id: true });
+
+// Section Schema
+const sectionSchema = new mongoose.Schema({
+  title: {
+    type: String,
+    required: true
+  },
+  description: {
+    type: String
+  },
+  lessons: [lessonSchema],
+  order: {
+    type: Number,
+    required: true
+  }
+}, { _id: true });
+
 const courseSchema = new mongoose.Schema({
   title: {
     type: String,
@@ -57,37 +139,7 @@ const courseSchema = new mongoose.Schema({
     min: [1, 'Duration must be at least 1 month'],
     max: [24, 'Duration cannot exceed 24 months']
   },
-  lessons: [{
-    title: {
-      type: String,
-      required: true
-    },
-    description: {
-      type: String
-    },
-    videoUrl: {
-      type: String
-    },
-    duration: {
-      type: Number // in minutes
-    },
-    order: {
-      type: Number,
-      required: true
-    },
-    isPreview: {
-      type: Boolean,
-      default: false
-    },
-    resources: [{
-      name: String,
-      url: String,
-      type: {
-        type: String,
-        enum: ['pdf', 'video', 'link', 'other']
-      }
-    }]
-  }],
+  sections: [sectionSchema],
   requirements: [{
     type: String
   }],
@@ -168,6 +220,91 @@ const courseSchema = new mongoose.Schema({
 courseSchema.index({ title: 1 });
 courseSchema.index({ status: 1 });
 // Note: _id index is automatically created by MongoDB - no need to specify
+
+// Methods for sections, lessons, and quizzes
+courseSchema.methods.addSection = function(sectionData) {
+  const section = {
+    ...sectionData,
+    order: this.sections.length,
+    lessons: []
+  };
+  this.sections.push(section);
+  return this.save();
+};
+
+courseSchema.methods.addLesson = function(sectionId, lessonData) {
+  const section = this.sections.id(sectionId);
+  if (!section) {
+    throw new Error('Section not found');
+  }
+  
+  const lesson = {
+    ...lessonData,
+    order: section.lessons.length,
+    quizzes: []
+  };
+  
+  section.lessons.push(lesson);
+  return this.save();
+};
+
+courseSchema.methods.addQuiz = function(sectionId, lessonId, quizData) {
+  const section = this.sections.id(sectionId);
+  if (!section) {
+    throw new Error('Section not found');
+  }
+  
+  const lesson = section.lessons.id(lessonId);
+  if (!lesson) {
+    throw new Error('Lesson not found');
+  }
+  
+  lesson.quizzes.push(quizData);
+  return this.save();
+};
+
+courseSchema.methods.getLessonById = function(lessonId) {
+  for (const section of this.sections) {
+    const lesson = section.lessons.id(lessonId);
+    if (lesson) {
+      return lesson;
+    }
+  }
+  return null;
+};
+
+// Virtual for course statistics
+courseSchema.virtual('stats').get(function() {
+  return {
+    totalSections: this.sections.length,
+    totalLessons: this.sections.reduce((total, section) => total + section.lessons.length, 0),
+    totalDuration: this.sections.reduce((total, section) => {
+      return total + section.lessons.reduce((lessonTotal, lesson) => lessonTotal + lesson.duration, 0);
+    }, 0),
+    totalQuizzes: this.sections.reduce((total, section) => {
+      return total + section.lessons.reduce((lessonTotal, lesson) => lessonTotal + lesson.quizzes.length, 0);
+    }, 0),
+    enrolledCount: this.enrolledStudents.length
+  };
+});
+
+// Pre-save middleware to calculate total duration
+courseSchema.pre('save', function(next) {
+  let totalDuration = 0;
+  
+  this.sections.forEach(section => {
+    section.lessons.forEach(lesson => {
+      totalDuration += lesson.duration;
+    });
+  });
+  
+  // Update duration field if not set
+  if (!this.duration) {
+    this.duration = Math.ceil(totalDuration / (60 * 8 * 30)); // Convert minutes to months (8h/day, 30 days/month)
+  }
+  
+  next();
+});
 
 // Calculate average rating
 courseSchema.methods.calculateAverageRating = function() {

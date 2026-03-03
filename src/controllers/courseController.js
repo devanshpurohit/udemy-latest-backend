@@ -137,16 +137,19 @@ const getCourseDraft = async (req, res) => {
   }
 };
 
-// @desc    Save course content (lessons)
+// @desc    Save course content (sections and lessons)
 // @route   PUT /api/courses/wizard/content/:id
 // @access  Private (Admin/Instructor)
 const saveCourseContent = async (req, res) => {
   try {
-    const { lessons } = req.body;
+    const { sections, lessons } = req.body;
+    
+    // Support both old lessons and new sections structure
+    const updateData = sections ? { sections } : { lessons };
     
     const course = await Course.findByIdAndUpdate(
       req.params.id,
-      { lessons },
+      updateData,
       { new: true, runValidators: true }
     );
 
@@ -308,9 +311,15 @@ const validateCourse = async (req, res) => {
     if (!course.category) {
       validationErrors.push('Course category is required');
     }
-    if (!course.lessons || course.lessons.length === 0) {
+    
+    // Check for lessons in sections structure
+    const hasLessons = course.sections && course.sections.length > 0 && 
+      course.sections.some(section => section.lessons && section.lessons.length > 0);
+    
+    if (!hasLessons) {
       validationErrors.push('At least one lesson is required');
     }
+    
     if (course.price < 0) {
       validationErrors.push('Price cannot be negative');
     }
@@ -558,11 +567,25 @@ const deleteCourse = async (req, res) => {
       deleteFile(course.thumbnail);
     }
 
-    course.lessons.forEach(lesson => {
-      if (lesson.videoUrl) {
-        deleteFile(lesson.videoUrl);
-      }
-    });
+    // Handle lessons from sections structure
+    if (course.sections && course.sections.length > 0) {
+      course.sections.forEach(section => {
+        if (section.lessons && section.lessons.length > 0) {
+          section.lessons.forEach(lesson => {
+            if (lesson.videoUrl) {
+              deleteFile(lesson.videoUrl);
+            }
+          });
+        }
+      });
+    } else if (course.lessons && course.lessons.length > 0) {
+      // Handle old lessons structure for backward compatibility
+      course.lessons.forEach(lesson => {
+        if (lesson.videoUrl) {
+          deleteFile(lesson.videoUrl);
+        }
+      });
+    }
 
     const deletedCourse = await Course.findByIdAndDelete(req.params.id);
     console.log('Deleted course object:', deletedCourse);
@@ -585,7 +608,239 @@ const deleteCourse = async (req, res) => {
   }
 };
 
-// @desc    Add lesson to course
+// @desc    Add section to course
+// @route   POST /api/courses/:id/sections
+// @access  Private (Admin/Instructor)
+const addSection = async (req, res) => {
+  try {
+    const course = await Course.findById(req.params.id);
+
+    if (!course) {
+      return res.status(404).json({
+        success: false,
+        message: 'Course not found'
+      });
+    }
+
+    if (req.user.role !== 'admin' && course.instructor.toString() !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. You can only add sections to your own courses.'
+      });
+    }
+
+    const { title, description } = req.body;
+
+    const section = {
+      title,
+      description,
+      order: course.sections.length,
+      lessons: []
+    };
+
+    course.sections.push(section);
+    await course.save();
+
+    res.status(201).json({
+      success: true,
+      message: 'Section added successfully',
+      data: { section: course.sections[course.sections.length - 1] }
+    });
+  } catch (error) {
+    console.error('Add section error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while adding section'
+    });
+  }
+};
+
+// @desc    Add lesson to section
+// @route   POST /api/courses/:id/sections/:sectionId/lessons
+// @access  Private (Admin/Instructor)
+const addLessonToSection = async (req, res) => {
+  try {
+    const course = await Course.findById(req.params.id);
+
+    if (!course) {
+      return res.status(404).json({
+        success: false,
+        message: 'Course not found'
+      });
+    }
+
+    if (req.user.role !== 'admin' && course.instructor.toString() !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. You can only add lessons to your own courses.'
+      });
+    }
+
+    const section = course.sections.id(req.params.sectionId);
+    if (!section) {
+      return res.status(404).json({
+        success: false,
+        message: 'Section not found'
+      });
+    }
+
+    const { title, description, videoUrl, duration, isPreview } = req.body;
+
+    const lesson = {
+      title,
+      description,
+      videoUrl,
+      duration,
+      order: section.lessons.length,
+      isPreview: isPreview === 'true' || isPreview === true || isPreview === 'on' || isPreview === 1,
+      quizzes: []
+    };
+
+    section.lessons.push(lesson);
+    await course.save();
+
+    res.status(201).json({
+      success: true,
+      message: 'Lesson added to section successfully',
+      data: { lesson: section.lessons[section.lessons.length - 1] }
+    });
+  } catch (error) {
+    console.error('Add lesson to section error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while adding lesson to section'
+    });
+  }
+};
+
+// @desc    Add quiz to lesson
+// @route   POST /api/courses/:id/sections/:sectionId/lessons/:lessonId/quiz
+// @access  Private (Admin/Instructor)
+const addQuizToLesson = async (req, res) => {
+  try {
+    const course = await Course.findById(req.params.id);
+
+    if (!course) {
+      return res.status(404).json({
+        success: false,
+        message: 'Course not found'
+      });
+    }
+
+    if (req.user.role !== 'admin' && course.instructor.toString() !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. You can only add quizzes to your own courses.'
+      });
+    }
+
+    const section = course.sections.id(req.params.sectionId);
+    if (!section) {
+      return res.status(404).json({
+        success: false,
+        message: 'Section not found'
+      });
+    }
+
+    const lesson = section.lessons.id(req.params.lessonId);
+    if (!lesson) {
+      return res.status(404).json({
+        success: false,
+        message: 'Lesson not found'
+      });
+    }
+
+    const { question, options, correctAnswer } = req.body;
+
+    // Validate quiz data
+    if (!question || !options || !Array.isArray(options) || correctAnswer === undefined) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid quiz data. All fields are required.'
+      });
+    }
+
+    if (options.length < 2 || options.length > 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'Quiz must have between 2 and 6 options'
+      });
+    }
+
+    if (correctAnswer < 0 || correctAnswer >= options.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'Correct answer must be a valid option index'
+      });
+    }
+
+    const quiz = {
+      question,
+      options,
+      correctAnswer
+    };
+
+    lesson.quizzes.push(quiz);
+    await course.save();
+
+    res.status(201).json({
+      success: true,
+      message: 'Quiz added to lesson successfully',
+      data: { quiz: lesson.quizzes[lesson.quizzes.length - 1] }
+    });
+  } catch (error) {
+    console.error('Add quiz to lesson error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while adding quiz to lesson'
+    });
+  }
+};
+
+// @desc    Get lesson with quizzes
+// @route   GET /api/courses/:id/sections/:sectionId/lessons/:lessonId
+// @access  Private
+const getLesson = async (req, res) => {
+  try {
+    const course = await Course.findById(req.params.id);
+
+    if (!course) {
+      return res.status(404).json({
+        success: false,
+        message: 'Course not found'
+      });
+    }
+
+    const section = course.sections.id(req.params.sectionId);
+    if (!section) {
+      return res.status(404).json({
+        success: false,
+        message: 'Section not found'
+      });
+    }
+
+    const lesson = section.lessons.id(req.params.lessonId);
+    if (!lesson) {
+      return res.status(404).json({
+        success: false,
+        message: 'Lesson not found'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: { lesson }
+    });
+  } catch (error) {
+    console.error('Get lesson error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while fetching lesson'
+    });
+  }
+};
+
+// @desc    Add lesson to course (legacy - for backward compatibility)
 // @route   POST /api/courses/:id/lessons
 // @access  Private (Admin/Instructor)
 const addLesson = async (req, res) => {
@@ -800,6 +1055,11 @@ module.exports = {
   updateLesson,
   deleteLesson,
   enrollCourse,
+  // New sections and quizzes functions
+  addSection,
+  addLessonToSection,
+  addQuizToLesson,
+  getLesson,
   // Wizard functions
   saveCourseDraft,
   updateCourseDraft,

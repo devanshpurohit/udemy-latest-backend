@@ -123,6 +123,12 @@ const addLessonValidation = [
     .withMessage('Order must be a positive integer'),
   body('isPreview')
     .optional()
+    .customSanitizer(value => {
+      // Convert string boolean values to actual boolean
+      if (value === 'true' || value === 'on' || value === '1') return true;
+      if (value === 'false' || value === 'off' || value === '0') return false;
+      return Boolean(value);
+    })
     .isBoolean()
     .withMessage('isPreview must be a boolean')
 ];
@@ -167,6 +173,18 @@ router.delete('/:id', authorize('admin', 'instructor'), courseController.deleteC
 router.post('/:id/lessons', authorize('admin', 'instructor'), addLessonValidation, courseController.addLesson);
 router.put('/:id/lessons/:lessonId', authorize('admin', 'instructor'), updateLessonValidation, courseController.updateLesson);
 router.delete('/:id/lessons/:lessonId', authorize('admin', 'instructor'), courseController.deleteLesson);
+
+// Section routes
+router.post('/:id/sections', authorize('admin', 'instructor'), courseController.addSection);
+
+// Section lesson routes
+router.post('/:id/sections/:sectionId/lessons', authorize('admin', 'instructor'), addLessonValidation, courseController.addLessonToSection);
+
+// Quiz routes
+router.post('/:id/sections/:sectionId/lessons/:lessonId/quiz', authorize('admin', 'instructor'), courseController.addQuizToLesson);
+
+// Get lesson details
+router.get('/:id/sections/:sectionId/lessons/:lessonId', courseController.getLesson);
 
 // Enrollment route
 router.post('/:id/enroll', courseController.enrollCourse);

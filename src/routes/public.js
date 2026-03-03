@@ -45,7 +45,7 @@ router.get('/courses', async (req, res) => {
 
     const courses = await Course.find(filter)
       .populate('instructor', 'username profile.firstName profile.lastName')
-      .select('-lessons -requirements -whatYouWillLearn -enrolledStudents -ratings')
+      .select('-sections -requirements -whatYouWillLearn -enrolledStudents -ratings')
       .sort(sort)
       .exec();
 

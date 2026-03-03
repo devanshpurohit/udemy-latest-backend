@@ -1,6 +1,60 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
+// Progress Schema for tracking course progress
+const progressSchema = new mongoose.Schema({
+  courseId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Course',
+    required: true
+  },
+  completedLessons: [{
+    lessonId: {
+      type: mongoose.Schema.Types.ObjectId,
+      required: true
+    },
+    completedAt: {
+      type: Date,
+      default: Date.now
+    },
+    timeSpent: {
+      type: Number, // in minutes
+      default: 0
+    }
+  }],
+  quizScores: [{
+    lessonId: {
+      type: mongoose.Schema.Types.ObjectId,
+      required: true
+    },
+    score: {
+      type: Number,
+      required: true,
+      min: 0,
+      max: 100
+    },
+    attemptedAt: {
+      type: Date,
+      default: Date.now
+    }
+  }],
+  currentLesson: {
+    type: mongoose.Schema.Types.ObjectId,
+    default: null
+  },
+  lastAccessedAt: {
+    type: Date,
+    default: Date.now
+  },
+  enrolledAt: {
+    type: Date,
+    default: Date.now
+  },
+  completedAt: {
+    type: Date
+  }
+}, { _id: true });
+
 const userSchema = new mongoose.Schema({
   username: {
     type: String,
@@ -66,11 +120,16 @@ const userSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Course'
   }],
+  progress: [progressSchema],
   wishlist: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Course'
   }],
   cart: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Course'
+  }],
+  purchasedCourses: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Course'
   }]
@@ -118,6 +177,83 @@ userSchema.methods.getProfile = function() {
     emailVerified: this.emailVerified,
     createdAt: this.createdAt
   };
+};
+
+// Progress tracking methods
+userSchema.methods.enrollInCourse = function(courseId) {
+  if (!this.enrolledCourses.includes(courseId)) {
+    this.enrolledCourses.push(courseId);
+    
+    // Add progress tracking for this course
+    const existingProgress = this.progress.find(p => p.courseId.toString() === courseId.toString());
+    if (!existingProgress) {
+      this.progress.push({
+        courseId: courseId,
+        completedLessons: [],
+        quizScores: [],
+        currentLesson: null,
+        enrolledAt: new Date()
+      });
+    }
+  }
+  return this.save();
+};
+
+userSchema.methods.markLessonComplete = function(courseId, lessonId, timeSpent = 0) {
+  const progress = this.progress.find(p => p.courseId.toString() === courseId.toString());
+  if (progress) {
+    const existingLesson = progress.completedLessons.find(l => l.lessonId.toString() === lessonId.toString());
+    if (!existingLesson) {
+      progress.completedLessons.push({
+        lessonId: lessonId,
+        completedAt: new Date(),
+        timeSpent: timeSpent
+      });
+    } else {
+      existingLesson.timeSpent += timeSpent;
+    }
+    progress.lastAccessedAt = new Date();
+  }
+  return this.save();
+};
+
+userSchema.methods.addQuizScore = function(courseId, lessonId, score) {
+  const progress = this.progress.find(p => p.courseId.toString() === courseId.toString());
+  if (progress) {
+    // Remove previous attempt for this lesson if exists
+    progress.quizScores = progress.quizScores.filter(q => q.lessonId.toString() !== lessonId.toString());
+    
+    // Add new quiz score
+    progress.quizScores.push({
+      lessonId: lessonId,
+      score: score,
+      attemptedAt: new Date()
+    });
+    
+    progress.lastAccessedAt = new Date();
+  }
+  return this.save();
+};
+
+userSchema.methods.getCourseProgress = function(courseId) {
+  const progress = this.progress.find(p => p.courseId.toString() === courseId.toString());
+  return progress || null;
+};
+
+userSchema.methods.getProgressPercentage = function(courseId, totalLessons) {
+  const progress = this.getCourseProgress(courseId);
+  if (!progress || totalLessons === 0) return 0;
+  
+  return Math.round((progress.completedLessons.length / totalLessons) * 100);
+};
+
+userSchema.methods.setCurrentLesson = function(courseId, lessonId) {
+  const progress = this.progress.find(p => p.courseId.toString() === courseId.toString());
+  if (progress) {
+    progress.currentLesson = lessonId;
+    progress.lastAccessedAt = new Date();
+  }
+  return this.save();
 };
 
 module.exports = mongoose.model('User', userSchema);
