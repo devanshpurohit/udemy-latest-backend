@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const userController = require('../controllers/userController');
+const dashboardController = require('../controllers/dashboardController');
 const authController = require('../controllers/authController');
 const { protect } = require('../middleware/auth');
 
@@ -14,7 +15,7 @@ router.get('/profile', userController.getProfile);
 router.put('/profile', userController.updateProfile);
 
 // Get dashboard data
-router.get('/dashboard', userController.getDashboard);
+router.get('/dashboard', dashboardController.getUserDashboard);
 
 // Wishlist routes
 router.post('/wishlist/:courseId', authController.addToWishlist);

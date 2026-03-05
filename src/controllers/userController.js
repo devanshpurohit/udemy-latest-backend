@@ -33,24 +33,34 @@ const getProfile = async (req, res) => {
 // @access  Private
 const updateProfile = async (req, res) => {
   try {
+
     const user = await User.findById(req.user.id);
-    
+
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    // Update fields
-    const { name, email, phone, countryCode, language } = req.body;
-    
+    const { name, email, phone, countryCode, language, profile } = req.body;
+
     if (name) user.name = name;
     if (email) user.email = email;
     if (phone) user.phone = phone;
     if (countryCode) user.countryCode = countryCode;
     if (language) user.language = language;
 
+    // ⭐ profile image update
+    if (profile?.profileImage) {
+      if (!user.profile) {
+        user.profile = {};
+      }
+
+      user.profile.profileImage = profile.profileImage;
+    }
+
     const updatedUser = await user.save();
 
     res.json(updatedUser);
+
   } catch (error) {
     console.error('Update profile error:', error);
     res.status(500).json({ message: error.message });

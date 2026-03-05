@@ -2,6 +2,106 @@ const Course = require('../models/Course');
 const User = require('../models/User');
 const Student = require('../models/Student');
 const Certificate = require('../models/Certificate');
+const Order = require('../models/Order');
+const Statement = require('../models/Statement');
+
+// @desc    Get user dashboard data
+// @route   GET /api/user/dashboard
+// @access  Private
+const getUserDashboard = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // Get user with purchasedCourses
+    const user = await User.findById(userId).populate({
+      path: 'purchasedCourses',
+      select: 'title price thumbnail courseImage image instructor description level category'
+    });
+
+    let courses = [];
+    let ordersData = [];
+
+    if (user && user.purchasedCourses && user.purchasedCourses.length > 0) {
+      // Use original purchased courses data
+      courses = user.purchasedCourses;
+      
+      // DEBUG: Log what we're getting
+      console.log('=== DEBUG: Purchased Courses ===');
+      courses.forEach((course, index) => {
+        console.log(`Course ${index + 1}:`, {
+          _id: course._id,
+          title: course.title,
+          image: course.image,
+          thumbnail: course.thumbnail,
+          courseImage: course.courseImage
+        });
+      });
+      
+      // Create order data from purchased courses
+      ordersData = user.purchasedCourses.map((course, index) => ({
+        _id: course._id,
+        orderId: course.orderId || `ORD-${Date.now()}-${index}`,
+        courseId: course,
+        amount: course.price || 0,
+        paymentStatus: "completed",
+        paymentMethod: "Other",
+        createdAt: course.createdAt || new Date()
+      }));
+    } else {
+      // Try to get from Orders collection
+      const orders = await Order.find({
+        userId,
+        paymentStatus: "completed"
+      }).populate({
+        path: 'courseId',
+        select: 'title price thumbnail courseImage instructor description level category'
+      });
+
+      if (orders.length > 0) {
+        courses = orders.map(order => order.courseId);
+        ordersData = orders;
+      } else {
+        // Try to get from Statements collection
+        const statements = await Statement.find({
+          student: userId,
+          status: "Paid"
+        }).populate({
+          path: 'course',
+          select: 'title price thumbnail courseImage instructor description level category'
+        });
+
+        if (statements.length > 0) {
+          courses = statements.map(statement => statement.course);
+          
+          // Convert statements to order format
+          ordersData = statements.map(statement => ({
+            _id: statement._id,
+            orderId: statement.orderId,
+            courseId: statement.course,
+            amount: statement.amount,
+            paymentStatus: "completed",
+            paymentMethod: statement.paymentMethod,
+            createdAt: statement.createdAt
+          }));
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      activeCourses: courses,
+      enrolledCourses: courses,
+      allCourses: courses,
+      orders: ordersData
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
 
 // @desc    Get dashboard stats
 // @route   GET /api/dashboard/stats
@@ -323,6 +423,7 @@ const getMonthlyRevenue = async () => {
 };
 
 module.exports = {
+  getUserDashboard,
   getDashboardStats,
   getRevenueData,
   getCoursePerformance,

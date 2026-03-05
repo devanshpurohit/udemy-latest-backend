@@ -1,5 +1,7 @@
 const User = require('../models/User');
 const Course = require('../models/Course');
+const Statement = require('../models/Statement');
+const Order = require('../models/Order');
 
 // @desc    Purchase course (fake payment)
 // @route   POST /api/purchase/:courseId
@@ -58,9 +60,35 @@ const purchaseCourse = async (req, res) => {
       await course.save();
     }
 
+    // 2️⃣ Generate Order ID
+    const orderId = `ORD-${Date.now()}`;
+
+    // 3️⃣ Save Statement
+    await Statement.create({
+      orderId,
+      student: userId, // Use student field (not user)
+      course: courseId,
+      amount: course.price || 0,
+      paymentMethod: "Other", // Required field
+      status: "Paid", // Required field (using status instead of paymentStatus)
+      instructor: course.instructor || null, // Required field
+      paymentDate: new Date() // Required field
+    });
+
+    // 4️⃣ Save Order for Dashboard
+    await Order.create({
+      userId: userId,
+      courseId: courseId,
+      orderId: orderId,
+      amount: course.price || 0,
+      paymentStatus: "completed",
+      paymentMethod: "Other"
+    });
+
     return res.json({
       success: true,
-      message: 'Course purchased successfully'
+      message: 'Course purchased successfully',
+      orderId
     });
   } catch (error) {
     console.error('Purchase course error:', error);

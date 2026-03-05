@@ -206,8 +206,8 @@ app.get('/test-file/:filename', (req, res) => {
    DATABASE
 ======================= */
 mongoose
-  .connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/udemy-platform')
-  .then(() => console.log('Connected to MongoDB: udemy-platform'))
+  .connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/udemy')
+  .then(() => console.log('Connected to MongoDB: udemy'))
   .catch((err) => console.error('MongoDB connection error:', err));
 
 /* =======================

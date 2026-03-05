@@ -1,5 +1,6 @@
 const express = require('express');
 const adminController = require('../controllers/adminController');
+const statementController = require('../controllers/statementController');
 const { protect, authorize } = require('../middleware/auth');
 
 const router = express.Router();
@@ -32,5 +33,10 @@ router.put('/users/:id/profile', adminController.updateUserProfile);
 // @desc    Get system statistics
 // @access  Private (Admin)
 router.get('/stats', adminController.getSystemStats);
+
+// @route   GET /api/admin/statements
+// @desc    Get all statements
+// @access  Private (Admin)
+router.get('/statements', statementController.getStatements);
 
 module.exports = router;
