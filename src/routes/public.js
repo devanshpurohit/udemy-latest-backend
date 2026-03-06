@@ -1,5 +1,6 @@
 const express = require('express');
 const Course = require('../models/Course');
+const User = require('../models/User');
 const mongoose = require('mongoose');
 
 const router = express.Router();
@@ -52,9 +53,36 @@ router.get('/courses', async (req, res) => {
     console.log('🔍 Public Courses API - Found courses:', courses.length);
     console.log('🔍 Public Courses API - Course titles:', courses.map(c => c.title));
 
+    // Check if user is authenticated and add purchase status
+    let userPurchasedCourses = [];
+    const authHeader = req.headers.authorization;
+    
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      try {
+        const token = authHeader.substring(7);
+        const jwt = require('jsonwebtoken');
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        
+        const user = await User.findById(decoded.id);
+        if (user && user.enrolledCourses) {
+          userPurchasedCourses = user.enrolledCourses.map(id => id.toString());
+        }
+      } catch (error) {
+        console.log('🔍 Token verification failed, treating as unauthenticated user');
+        // Continue without purchase status
+      }
+    }
+
+    // Add isPurchased field to each course
+    const coursesWithStatus = courses.map(course => {
+      const courseObj = course.toObject();
+      courseObj.isPurchased = userPurchasedCourses.includes(course._id.toString());
+      return courseObj;
+    });
+
     res.status(200).json({
       success: true,
-      data: courses
+      data: coursesWithStatus
     });
 
   } catch (error) {
@@ -98,13 +126,51 @@ router.get('/courses/:id', async (req, res) => {
       });
     }
 
+    // Check if user is authenticated and has purchased this course
+    let isPurchased = false;
+    const authHeader = req.headers.authorization;
+    
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      try {
+        const token = authHeader.substring(7);
+        const jwt = require('jsonwebtoken');
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        
+        // Check if user has purchased this course
+        const user = await User.findById(decoded.id);
+        if (user) {
+          // Check if course is in user's enrolled courses
+          isPurchased = user.enrolledCourses && user.enrolledCourses.some(
+            enrolledCourse => enrolledCourse.toString() === courseId.toString()
+          );
+          
+          // Alternative: Check orders if you have an Order model
+          // const Order = require('../models/Order');
+          // const purchase = await Order.findOne({
+          //   user: decoded.id,
+          //   course: courseId,
+          //   paymentStatus: 'completed'
+          // });
+          // isPurchased = !!purchase;
+        }
+      } catch (error) {
+        console.log('🔍 Token verification failed, treating as unauthenticated user');
+        // Continue without purchase status
+      }
+    }
+
+    // Convert course to plain object and add isPurchased field
+    const courseObj = course.toObject();
+    courseObj.isPurchased = isPurchased;
+
     console.log('🔍 Public course fetched:', course.title);
     console.log('🔍 Course ID:', course._id);
     console.log('🔍 Course instructor:', course.instructor?.username);
+    console.log('🔍 Is user purchased:', isPurchased);
 
     res.status(200).json({
       success: true,
-      data: course
+      data: courseObj
     });
 
   } catch (error) {

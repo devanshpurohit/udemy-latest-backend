@@ -150,8 +150,52 @@ const getDashboard = async (req, res) => {
   }
 };
 
+// @desc    Check if user has access to course
+// @route   GET /api/users/course-access/:id
+// @access  Private
+const checkCourseAccess = async (req, res) => {
+  try {
+    const courseId = req.params.id;
+    const userId = req.user.id;
+
+    // Check if user has purchased this course
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ 
+        success: false, 
+        isPurchased: false 
+      });
+    }
+
+    // Check orders/enrollments
+    // This is a simple check - you might need to adjust based on your actual data structure
+    const hasPurchased = user.enrolledCourses && user.enrolledCourses.includes(courseId);
+    
+    // Alternative: Check orders collection if you have one
+    // const Order = require('../models/Order');
+    // const purchase = await Order.findOne({ 
+    //   user: userId, 
+    //   course: courseId, 
+    //   paymentStatus: 'completed' 
+    // });
+
+    res.json({
+      success: true,
+      isPurchased: hasPurchased
+    });
+  } catch (error) {
+    console.error('Check course access error:', error);
+    res.status(500).json({ 
+      success: false, 
+      isPurchased: false,
+      message: 'Server error'
+    });
+  }
+};
+
 module.exports = {
   getProfile,
   updateProfile,
-  getDashboard
+  getDashboard,
+  checkCourseAccess
 };

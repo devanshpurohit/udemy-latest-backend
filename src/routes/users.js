@@ -17,6 +17,9 @@ router.put('/profile', userController.updateProfile);
 // Get dashboard data
 router.get('/dashboard', dashboardController.getUserDashboard);
 
+// Check course access
+router.get('/course-access/:id', userController.checkCourseAccess);
+
 // Wishlist routes
 router.post('/wishlist/:courseId', authController.addToWishlist);
 router.get('/wishlist', authController.getWishlist);
