@@ -20,6 +20,8 @@ const statementRoutes = require('./routes/statements');
 const chatRoutes = require('./routes/chat');
 const publicRoutes = require('./routes/public');
 const purchaseRoutes = require('./routes/purchase');
+const reviewRoutes = require("./routes/reviewRoutes");
+
 
 const app = express();
 
@@ -28,23 +30,19 @@ const app = express();
 ======================= */
 app.set('trust proxy', 1);
 
+
+/* =======================
+   ✅ CORS — FIRST (MUST BE FIRST)
+======================= */
+app.use(cors());
+
+// ✅ ALWAYS allow preflight
+app.options('*', (req, res) => res.sendStatus(200));
+
 /* =======================
    SECURITY
 ======================= */
 app.use(helmet());
-
-/* =======================
-   ✅ CORS — FIRST
-======================= */
-app.use(
-  cors({
-    origin: true,   // request ka origin allow karega
-    credentials: true,
-  })
-);
-
-// ✅ ALWAYS allow preflight
-app.options('*', (req, res) => res.sendStatus(200));
 
 /* =======================
    BODY PARSING
@@ -83,14 +81,22 @@ const publicLimiter = rateLimit({
 });
 
 /* =======================
-   CORS
+   ROUTES
 ======================= */
-app.use(cors({
-    origin: ['http://localhost:3000', 'http://localhost:5173', 'http://localhost:5174', 'http://localhost:5175'],
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept', 'Authorization']
-}));
+app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes); // Add user routes
+app.use('/api/courses', courseRoutes);
+app.use('/api/students', studentRoutes);
+app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/announcements', announcementRoutes);
+app.use('/api/coupons', couponRoutes);
+app.use('/api/certificates', certificateRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/statements', statementRoutes);
+app.use('/api/chat', chatRoutes);
+app.use('/api/public', publicLimiter, publicRoutes); // Apply rate limit then routes
+app.use('/api', purchaseRoutes);
+app.use("/api", reviewRoutes);
 
 /* =======================
    STATIC FILES
@@ -211,23 +217,6 @@ mongoose
   .catch((err) => console.error('MongoDB connection error:', err));
 
 /* =======================
-   ROUTES
-======================= */
-app.use('/api/auth', authRoutes);
-app.use('/api/users', userRoutes); // Add user routes
-app.use('/api/courses', courseRoutes);
-app.use('/api/students', studentRoutes);
-app.use('/api/dashboard', dashboardRoutes);
-app.use('/api/announcements', announcementRoutes);
-app.use('/api/coupons', couponRoutes);
-app.use('/api/certificates', certificateRoutes);
-app.use('/api/admin', adminRoutes);
-app.use('/api/statements', statementRoutes);
-app.use('/api/chat', chatRoutes);
-app.use('/api/public', publicLimiter, publicRoutes); // Apply rate limit then routes
-app.use('/api', purchaseRoutes);
-
-/* =======================
    HEALTH
 ======================= */
 app.get('/api/health', (req, res) => {
@@ -261,15 +250,15 @@ const server = app.listen(PORT, () => {
 });
 
 // 🚀 STEP 4 — Backend Socket Setup
-const io = new Server(server, {
-  cors: { 
-    origin: process.env.NODE_ENV === 'production' 
-      ? ['https://yourdomain.com', 'https://www.yourdomain.com'] 
-      : ["http://localhost:3000", "http://localhost:5173", "http://localhost:5174", "http://localhost:5175"],
-    methods: ["GET", "POST"],
-    credentials: true
-  },
-});
+// const io = new Server(server, {
+//   cors: { 
+//     origin: process.env.NODE_ENV === 'production' 
+//       ? ['https://yourdomain.com', 'https://www.yourdomain.com'] 
+//       : ["http://localhost:3000", "http://localhost:5173", "http://localhost:5174", "http://localhost:5175"],
+//     methods: ["GET", "POST"],
+//     credentials: true
+//   },
+// });
 
 // Store io in app for controllers to access
 app.set('io', io);
