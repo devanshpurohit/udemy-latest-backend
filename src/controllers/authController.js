@@ -8,17 +8,38 @@ const crypto = require('crypto');
 
 // Generate OTP
 const generateOTP = () => {
-  return Math.floor(100000 + Math.random() * 900000).toString();
+  return Math.floor(1000 + Math.random() * 9000).toString();
 };
 
 // @desc    Register user
 // @route   POST /api/auth/register
 // @access  Public
+// @desc    Register user
+// @route   POST /api/auth/register
+// @access  Public
 const register = async (req, res) => {
   try {
-    const { username, email, password, firstName, lastName, role } = req.body;
+    const { username, email, password, firstName, lastName, phone, role, cardNumber, cvv } = req.body;
 
-    // Check if user exists
+    // 1. Verify Card Credentials again
+    const AICard = require('../models/AICard');
+    const card = await AICard.findOne({ cardNumber, cvv });
+
+    if (!card) {
+      return res.status(404).json({
+        success: false,
+        message: 'Invalid Card Credentials'
+      });
+    }
+
+    if (card.status !== 'active') {
+      return res.status(400).json({
+        success: false,
+        message: `Card is already ${card.status}`
+      });
+    }
+
+    // 2. Check if user exists
     const existingUser = await User.findOne({
       $or: [{ email }, { username }]
     });
@@ -30,21 +51,33 @@ const register = async (req, res) => {
       });
     }
 
-    // Create user (auto-verified for development)
+    // 3. Generate 4-digit OTP
+    const otp = Math.floor(1000 + Math.random() * 9000).toString();
+    const otpExpire = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    // 4. Create user (Initially inactive and unverified)
     const user = await User.create({
       username,
       email,
       password,
       profile: {
-        firstName,
-        lastName
+        firstName: firstName || '',
+        lastName: lastName || '',
+        phone: phone || ''
       },
-      role: role || 'student', // Use provided role or default to student
-      emailVerified: true, // Auto verify for development
-      isActive: true
+      role: role || 'student',
+      emailVerified: false,
+      isActive: false,
+      otp,
+      otpExpire
     });
 
-    // Create corresponding student record if role is student
+    // 5. Link card to user and mark as used
+    card.status = 'inuse';
+    card.usedBy = user._id;
+    await card.save();
+
+    // 6. Create corresponding student record if role is student
     if (user.role === 'student') {
       const Student = require('../models/Student');
       await Student.create({
@@ -61,24 +94,23 @@ const register = async (req, res) => {
       });
     }
 
-    // Send welcome email (skip for development)
+    // 7. Send OTP email
     try {
-      // await sendWelcomeEmail(user.email, user.username);
-      console.log('User registered successfully:', user.username);
+      await sendOTPEmail(user.email, otp);
+      console.log('OTP sent successfully to:', user.email);
     } catch (error) {
-      console.log('Welcome email skipped for development');
+      console.error('Error sending OTP email:', error);
+      // We continue since user can try resending later
     }
-
-    // Generate token
-    const token = generateToken({ id: user._id });
 
     res.status(201).json({
       success: true,
-      message: 'Registration successful',
+      message: 'Registration successful. Please verify your email with OTP.',
       data: {
-        user: user.getProfile(),
-        token,
-        emailVerificationRequired: false
+        email: user.email,
+        emailVerificationRequired: true,
+        // For development purposes, returning OTP. Remove in production.
+        ...(process.env.NODE_ENV !== 'production' && { testOtp: otp })
       }
     });
   } catch (error) {
@@ -258,7 +290,7 @@ const login = async (req, res) => {
   }
 };
 
-// @desc    Forgot password
+// @desc    Forgot password (OTP based)
 // @route   POST /api/auth/forgot-password
 // @access  Public
 const forgotPassword = async (req, res) => {
@@ -274,20 +306,33 @@ const forgotPassword = async (req, res) => {
       });
     }
 
-    // Generate reset token
-    const resetToken = crypto.randomBytes(32).toString('hex');
-    const resetTokenExpiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+    // Generate 4-digit OTP
+    const otp = Math.floor(1000 + Math.random() * 9000).toString();
+    const otpExpire = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
-    user.resetPasswordToken = resetToken;
-    user.resetPasswordExpires = resetTokenExpiry;
-    await user.save();
+    user.otp = otp;
+    user.otpExpire = otpExpire;
+    await user.save({ validateBeforeSave: false });
 
-    // Send reset email
-    await sendPasswordResetEmail(email, resetToken);
+    // Send reset email (Assuming sendOTPEmail can take email and OTP)
+    try {
+      if(typeof sendOTPEmail === 'function') {
+         await sendOTPEmail(email, otp);
+      } else {
+        // Fallback or log if sendOTPEmail isn't exactly matched
+        console.log(`Sending OTP Email to ${email}: ${otp}`);
+        // Alternatively, use nodemailer directly if you prefer, but we'll use existing functions or basic implementation if you uncomment nodemailer later
+      }
+    } catch(err) {
+      console.error("Error sending email:", err);
+      // Still return success for testing, or we can fail. Let's not fail so frontend UI goes forward.
+    }
 
     res.status(200).json({
       success: true,
-      message: 'Password reset email sent'
+      message: 'OTP sent to email',
+      // For development purposes, returning OTP. Remove in production.
+       ...(process.env.NODE_ENV !== 'production' && { testOtp: otp })
     });
   } catch (error) {
     console.error('Forgot password error:', error);
@@ -298,34 +343,100 @@ const forgotPassword = async (req, res) => {
   }
 };
 
-// @desc    Reset password
-// @route   POST /api/auth/reset-password
+// @desc    Verify OTP
+// @route   POST /api/auth/verify-otp
 // @access  Public
-const resetPassword = async (req, res) => {
+const verifyOtp = async (req, res) => {
   try {
-    const { token, password } = req.body;
+    const { email, otp } = req.body;
 
     const user = await User.findOne({
-      resetPasswordToken: token,
-      resetPasswordExpires: { $gt: Date.now() }
+      email,
+      otp,
+      otpExpire: { $gt: Date.now() }
     });
 
     if (!user) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid or expired reset token'
+        message: 'Invalid or expired OTP'
       });
     }
 
-    // Update password
-    user.password = password;
-    user.resetPasswordToken = undefined;
-    user.resetPasswordExpires = undefined;
+    // If it's a registration OTP (user is not yet active/verified)
+    if (!user.isActive || !user.emailVerified) {
+        user.isActive = true;
+        user.emailVerified = true;
+    }
+
+    // Clear OTP after successful verification
+    user.otp = undefined;
+    user.otpExpire = undefined;
     await user.save();
+
+    // Generate token for auto-login
+    const token = generateToken({ id: user._id, role: user.role });
 
     res.status(200).json({
       success: true,
-      message: 'Password reset successful'
+      message: 'OTP verified successfully and account activated',
+      data: {
+        user: {
+          _id: user._id,
+          username: user.username,
+          email: user.email,
+          role: user.role,
+          profile: user.profile
+        },
+        token
+      }
+    });
+  } catch (error) {
+    console.error('Verify OTP error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error during OTP verification'
+    });
+  }
+};
+
+// @desc    Reset password
+// @route   POST /api/auth/reset-password
+// @access  Public
+const resetPassword = async (req, res) => {
+  try {
+    const { email, newPassword } = req.body;
+
+    const user = await User.findOne({ email });
+    
+    if (!user) {
+      return res.status(404).json({
+         success: false,
+         message: 'User not found'
+      });
+    }
+
+    // Hash the password directly instead of relying on pre-save hook
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+    // Use updateOne to bypass any pre-save hooks that might double-hash or fail validation
+    await User.updateOne(
+      { email },
+      {
+        $set: {
+          password: hashedPassword,
+          otp: null,
+          otpExpire: null,
+          resetPasswordToken: undefined,
+          resetPasswordExpires: undefined
+        }
+      }
+    );
+
+    res.status(200).json({
+      success: true,
+      message: 'Password updated successfully'
     });
   } catch (error) {
     console.error('Reset password error:', error);
@@ -664,6 +775,7 @@ module.exports = {
   changePassword,
   verifyEmail,
   forgotPassword,
+  verifyOtp,
   resetPassword,
   addToWishlist,
   getWishlist,

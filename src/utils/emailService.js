@@ -2,7 +2,7 @@ const nodemailer = require('nodemailer');
 
 // Create email transporter
 const createTransporter = () => {
-  return nodemailer.createTransporter({
+  return nodemailer.createTransport({
     host: process.env.EMAIL_HOST,
     port: process.env.EMAIL_PORT,
     secure: false, // true for 465, false for other ports
@@ -40,7 +40,7 @@ const sendOTPEmail = async (email, otp) => {
   const html = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
       <h2 style="color: #333;">Email Verification</h2>
-      <p>Thank you for registering with Udemy Admin. Please use the following OTP to verify your email address:</p>
+      <p>Thank you for registering with our website. Please use the following OTP to verify your email address:</p>
       <div style="background: #f0f0f0; padding: 20px; text-align: center; margin: 20px 0;">
         <span style="font-size: 24px; font-weight: bold; letter-spacing: 2px;">${otp}</span>
       </div>
@@ -53,7 +53,7 @@ const sendOTPEmail = async (email, otp) => {
 
   return await sendEmail({
     to: email,
-    subject: 'Verify Your Email - Udemy Admin',
+    subject: 'Verify Your Email',
     html: html,
     text: `Your OTP is: ${otp}`
   });
@@ -82,7 +82,7 @@ const sendPasswordResetEmail = async (email, resetToken) => {
 
   return await sendEmail({
     to: email,
-    subject: 'Reset Your Password - Udemy Admin',
+    subject: 'Reset Your Password',
     html: html,
     text: `Reset your password here: ${resetUrl}`
   });
@@ -114,9 +114,9 @@ const sendWelcomeEmail = async (email, username) => {
 
   return await sendEmail({
     to: email,
-    subject: 'Welcome to Udemy Admin!',
+    subject: 'Welcome to our website',
     html: html,
-    text: `Welcome to Udemy Admin! You can now login to your account.`
+    text: `Welcome to our website! You can now login to your account.`
   });
 };
 

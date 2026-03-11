@@ -116,6 +116,8 @@ const userSchema = new mongoose.Schema({
     default: false
   },
   emailVerificationToken: String,
+  otp: String,
+  otpExpire: Date,
   enrolledCourses: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Course'

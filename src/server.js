@@ -21,6 +21,7 @@ const chatRoutes = require('./routes/chat');
 const publicRoutes = require('./routes/public');
 const purchaseRoutes = require('./routes/purchase');
 const reviewRoutes = require("./routes/reviewRoutes");
+const aiCardRoutes = require('./routes/aiCard');
 
 
 const app = express();
@@ -47,8 +48,8 @@ app.use(helmet());
 /* =======================
    BODY PARSING
 ======================= */
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: '5000mb' }));
+app.use(express.urlencoded({ extended: true, limit: '5000mb' }));
 
 /* =======================
    RATE LIMIT (AFTER CORS)
@@ -97,6 +98,7 @@ app.use('/api/chat', chatRoutes);
 app.use('/api/public', publicLimiter, publicRoutes); // Apply rate limit then routes
 app.use('/api', purchaseRoutes);
 app.use("/api", reviewRoutes);
+app.use('/api/ai-cards', aiCardRoutes);
 
 /* =======================
    STATIC FILES
@@ -250,15 +252,12 @@ const server = app.listen(PORT, () => {
 });
 
 // 🚀 STEP 4 — Backend Socket Setup
-// const io = new Server(server, {
-//   cors: { 
-//     origin: process.env.NODE_ENV === 'production' 
-//       ? ['https://yourdomain.com', 'https://www.yourdomain.com'] 
-//       : ["http://localhost:3000", "http://localhost:5173", "http://localhost:5174", "http://localhost:5175"],
-//     methods: ["GET", "POST"],
-//     credentials: true
-//   },
-// });
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET","POST"]
+  }
+});
 
 // Store io in app for controllers to access
 app.set('io', io);

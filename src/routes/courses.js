@@ -109,8 +109,8 @@ const addLessonValidation = [
     .withMessage('Description cannot exceed 1000 characters'),
   body('videoUrl')
     .optional()
-    .isURL()
-    .withMessage('Video URL must be a valid URL'),
+    .isString()
+    .withMessage('Video URL must be a valid URL or path'),
   body('duration')
     .optional()
     .isNumeric()
@@ -144,8 +144,8 @@ const updateLessonValidation = [
     .withMessage('Description cannot exceed 1000 characters'),
   body('videoUrl')
     .optional()
-    .isURL()
-    .withMessage('Video URL must be a valid URL'),
+    .isString()
+    .withMessage('Video URL must be a valid URL or path'),
   body('duration')
     .optional()
     .isNumeric()
@@ -200,6 +200,8 @@ router.post('/wizard/publish/:id', authorize('admin', 'instructor'), courseContr
 router.get('/wizard/validate/:id', courseController.validateCourse);
 
 // Upload routes
+router.post('/upload-video', authorize('admin', 'instructor'), uploadSingle('video'), courseController.uploadCourseVideo);
+
 router.post('/:id/upload-thumbnail', authorize('admin', 'instructor'), uploadSingle('thumbnail'), async (req, res) => {
   try {
     if (!req.file) {

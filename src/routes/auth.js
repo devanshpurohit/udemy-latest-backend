@@ -47,8 +47,8 @@ const verifyEmailValidation = [
     .withMessage('Please provide a valid email')
     .normalizeEmail(),
   body('otp')
-    .isLength({ min: 6, max: 6 })
-    .withMessage('OTP must be 6 digits long')
+    .isLength({ min: 4, max: 4 })
+    .withMessage('OTP must be 4 digits long')
     .isNumeric()
     .withMessage('OTP must contain only numbers')
 ];
@@ -60,11 +60,24 @@ const forgotPasswordValidation = [
     .normalizeEmail()
 ];
 
+const verifyOtpValidation = [
+  body('email')
+    .isEmail()
+    .withMessage('Please provide a valid email')
+    .normalizeEmail(),
+  body('otp')
+    .isLength({ min: 4, max: 4 })
+    .withMessage('OTP must be 4 digits')
+    .isNumeric()
+    .withMessage('OTP must be numeric')
+];
+
 const resetPasswordValidation = [
-  body('token')
-    .notEmpty()
-    .withMessage('Reset token is required'),
-  body('password')
+  body('email')
+    .isEmail()
+    .withMessage('Please provide a valid email')
+    .normalizeEmail(),
+  body('newPassword')
     .isLength({ min: 6 })
     .withMessage('Password must be at least 6 characters long')
     .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
@@ -106,6 +119,7 @@ router.post('/register', registerValidation, authController.register);
 router.post('/verify-email', verifyEmailValidation, authController.verifyEmail);
 router.post('/login', loginValidation, authController.login);
 router.post('/forgot-password', forgotPasswordValidation, authController.forgotPassword);
+router.post('/verify-otp', verifyOtpValidation, authController.verifyOtp);
 router.post('/reset-password', resetPasswordValidation, authController.resetPassword);
 
 // Protected routes

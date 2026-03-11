@@ -58,6 +58,8 @@ const fileFilter = (req, file, cb) => {
     'video/mpeg': true,
     'video/quicktime': true,
     'video/x-msvideo': true,
+    'video/webm': true,
+    'video/x-matroska': true,
     'application/pdf': true,
     'application/msword': true,
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document': true,
@@ -78,7 +80,7 @@ const upload = multer({
   storage: storage,
   fileFilter: fileFilter,
   limits: {
-    fileSize: parseInt(process.env.MAX_FILE_SIZE) || 10 * 1024 * 1024, // 10MB default
+    fileSize: 5 * 1024 * 1024 * 1024, // Hardcode 5GB
     files: 5 // Maximum 5 files at once
   }
 });
@@ -91,7 +93,7 @@ const uploadSingle = (fieldName) => {
         if (err.code === 'LIMIT_FILE_SIZE') {
           return res.status(400).json({
             success: false,
-            message: 'File too large'
+            message: `File too large! (CL: ${req.headers['content-length']})`
           });
         } else if (err.code === 'LIMIT_FILE_COUNT') {
           return res.status(400).json({
@@ -106,7 +108,7 @@ const uploadSingle = (fieldName) => {
       } else if (err) {
         return res.status(400).json({
           success: false,
-          message: err.message
+          message: `Unknown error: ${err.message} (CL: ${req.headers['content-length']})`
         });
       }
       next();

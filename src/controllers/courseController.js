@@ -1045,6 +1045,37 @@ const enrollCourse = async (req, res) => {
   }
 };
 
+// @desc    Upload course video (generic endpoint)
+// @route   POST /api/courses/upload-video
+// @access  Private (Admin/Instructor)
+const uploadCourseVideo = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No video file uploaded'
+      });
+    }
+
+    // Return the generated file path to the client.
+    // The client should keep this and attach it to the `videoUrl` field when creating/updating the lesson.
+    res.status(200).json({
+      success: true,
+      message: 'Video uploaded successfully',
+      data: {
+        videoUrl: '/uploads/videos/' + req.file.filename // req.file.path or filename depending on OS separator; using filename for safer portable front-end path.
+      }
+    });
+  } catch (error) {
+    console.error('Upload video error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while uploading video',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   createCourse,
   getCourses,
@@ -1068,5 +1099,6 @@ module.exports = {
   saveCoursePricing,
   saveCourseMedia,
   publishCourse,
-  validateCourse
+  validateCourse,
+  uploadCourseVideo
 };

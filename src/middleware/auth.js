@@ -105,8 +105,11 @@ const optionalAuth = async (req, res, next) => {
   }
 };
 
+const admin = authorize('admin');
+
 module.exports = {
   protect,
   authorize,
+  admin,
   optionalAuth
 };
