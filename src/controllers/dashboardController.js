@@ -87,12 +87,33 @@ const getUserDashboard = async (req, res) => {
       }
     }
 
+    // Get User's Certificates
+    const userCertificates = await Certificate.find({
+      student: userId,
+      status: 'active',
+      isRevoked: false
+    }).sort({ issuedAt: -1 });
+
+    // Calculate total quizzes completed across all courses
+    let totalQuizzes = 0;
+    if (user.progress && Array.isArray(user.progress)) {
+        user.progress.forEach(p => {
+            if (p.quizScores && Array.isArray(p.quizScores)) {
+                totalQuizzes += p.quizScores.length;
+            }
+        });
+    }
+
     res.json({
       success: true,
       activeCourses: courses,
       enrolledCourses: courses,
       allCourses: courses,
-      orders: ordersData
+      orders: ordersData,
+      certificates: userCertificates,
+      stats: {
+        totalQuizzes: totalQuizzes
+      }
     });
 
   } catch (error) {

@@ -164,6 +164,7 @@ const updateLessonValidation = [
 
 // Routes
 router.post('/', authorize('admin', 'instructor'), createCourseValidation, courseController.createCourse);
+router.get('/list', courseController.getCourseList);
 router.get('/', courseController.getCourses);
 router.get('/:id', courseController.getCourse);
 router.put('/:id', authorize('admin', 'instructor'), updateCourseValidation, courseController.updateCourse);
@@ -176,12 +177,18 @@ router.delete('/:id/lessons/:lessonId', authorize('admin', 'instructor'), course
 
 // Section routes
 router.post('/:id/sections', authorize('admin', 'instructor'), courseController.addSection);
+router.put('/:id/sections/:sectionId', authorize('admin', 'instructor'), courseController.updateSection);
+router.delete('/:id/sections/:sectionId', authorize('admin', 'instructor'), courseController.deleteSection);
 
 // Section lesson routes
 router.post('/:id/sections/:sectionId/lessons', authorize('admin', 'instructor'), addLessonValidation, courseController.addLessonToSection);
+router.put('/:id/sections/:sectionId/lessons/:lessonId', authorize('admin', 'instructor'), addLessonValidation, courseController.updateLessonInSection);
+router.delete('/:id/sections/:sectionId/lessons/:lessonId', authorize('admin', 'instructor'), courseController.deleteLessonFromSection);
 
 // Quiz routes
 router.post('/:id/sections/:sectionId/lessons/:lessonId/quiz', authorize('admin', 'instructor'), courseController.addQuizToLesson);
+router.put('/:id/sections/:sectionId/lessons/:lessonId/quiz/:quizId', authorize('admin', 'instructor'), courseController.updateQuiz);
+router.delete('/:id/sections/:sectionId/lessons/:lessonId/quiz/:quizId', authorize('admin', 'instructor'), courseController.deleteQuiz);
 
 // Get lesson details
 router.get('/:id/sections/:sectionId/lessons/:lessonId', courseController.getLesson);

@@ -12,12 +12,14 @@ const getStudents = async (req, res) => {
       page = 1,
       limit = 20,
       search,
+      course,
+      progress,
       sortBy = 'createdAt',
       sortOrder = 'desc'
     } = req.query;
 
     console.log('=== GET STUDENTS START ===');
-    console.log('Query params:', { page, limit, search, sortBy, sortOrder });
+    console.log('Query params:', { page, limit, search, course, progress, sortBy, sortOrder });
 
     // Build filter
     const filter = { role: 'student' };
@@ -29,6 +31,37 @@ const getStudents = async (req, res) => {
         { 'profile.firstName': { $regex: search, $options: 'i' } },
         { 'profile.lastName': { $regex: search, $options: 'i' } }
       ];
+    }
+
+    // Filter by course
+    if (course && course !== 'All') {
+      const studentMatches = await Student.find({ 'enrolledCourses.course': course }).distinct('user');
+      filter._id = { $in: studentMatches };
+    }
+
+    // Filter by progress
+    if (progress && progress !== 'All') {
+      const [min, max] = progress.split('-').map(Number);
+      
+      // We need to find students whose average progress is within range
+      // This is complex with find(), so let's find all students and filter IDs
+      // A more performant way would be aggregation, but for now:
+      const allStudents = await Student.find({});
+      const matchingUserIds = allStudents.filter(s => {
+        if (!s.enrolledCourses || s.enrolledCourses.length === 0) return false;
+        const avg = s.enrolledCourses.reduce((acc, curr) => acc + (curr.progress || 0), 0) / s.enrolledCourses.length;
+        return avg >= min && avg <= max;
+      }).map(s => s.user);
+
+      if (filter._id) {
+        // Intersect with existing course filter
+        const existingIds = filter._id.$in.map(id => id.toString());
+        const newIds = matchingUserIds.map(id => id.toString());
+        const intersection = existingIds.filter(id => newIds.includes(id));
+        filter._id = { $in: intersection };
+      } else {
+        filter._id = { $in: matchingUserIds };
+      }
     }
 
     console.log('Filter:', JSON.stringify(filter, null, 2));
@@ -117,15 +150,55 @@ const getStudent = async (req, res) => {
     const studentDetails = await Student.findOne({ user: student._id })
       .populate({
         path: 'enrolledCourses.course',
-        select: 'title thumbnail instructor totalEnrollments'
+        select: 'title thumbnail instructor totalEnrollments sections',
+        populate: {
+          path: 'sections.lessons',
+          select: 'title type duration'
+        }
       });
+
+    // Fetch AI Card used by this student
+    const AICard = require('../models/AICard');
+    const aiCard = await AICard.findOne({ usedBy: student._id });
+
+    // Calculate Quiz Stats from user.progress
+    let totalAttempts = 0;
+    let totalScore = 0;
+    let passedQuizzes = 0;
+    let failedQuizzes = 0;
+    let totalQuizzes = 0;
+
+    if (student.progress && Array.isArray(student.progress)) {
+        student.progress.forEach(p => {
+            if (p.quizScores && Array.isArray(p.quizScores)) {
+                p.quizScores.forEach(q => {
+                    totalAttempts++;
+                    totalScore += q.score;
+                    if (q.score >= 70) passedQuizzes++;
+                    else failedQuizzes++;
+                    totalQuizzes++;
+                });
+            }
+        });
+    }
+
+    const quizStats = {
+        totalAttempts,
+        averageScore: totalQuizzes > 0 ? Math.round(totalScore / totalQuizzes) : 0,
+        passedQuizzes,
+        failedQuizzes
+    };
 
     res.status(200).json({
       success: true,
       data: {
         student: {
           ...student.toObject(),
-          studentDetails: studentDetails || {
+          aiCard: aiCard || null,
+          studentDetails: studentDetails ? {
+            ...studentDetails.toObject(),
+            quizStats
+          } : {
             enrolledCourses: [],
             learningStats: {
               totalCoursesEnrolled: 0,
@@ -133,6 +206,7 @@ const getStudent = async (req, res) => {
               totalLearningTime: 0,
               averageCompletionRate: 0
             },
+            quizStats,
             achievements: []
           }
         }
@@ -306,8 +380,26 @@ const updateStudentProgress = async (req, res) => {
           lesson: lessonId,
           completedAt: new Date()
         });
+
+        // 🚀 Auto-calculate progress percentage
+        try {
+            const Course = require('../models/Course');
+            const course = await Course.findById(courseId);
+            if (course) {
+                const totalLessons = course.sections.reduce((total, section) => total + section.lessons.length, 0);
+                if (totalLessons > 0) {
+                    enrolledCourse.progress = Math.round((enrolledCourse.completedLessons.length / totalLessons) * 100);
+                    console.log(`Calculated progress for student ${studentId} in course ${courseId}: ${enrolledCourse.progress}%`);
+                }
+            }
+        } catch (courseError) {
+            console.error('Error calculating progress percentage:', courseError);
+        }
       }
     }
+
+    // Update statistics
+    student.updateLearningStats();
 
     // Update last accessed time
     enrolledCourse.lastAccessedAt = new Date();
@@ -483,6 +575,66 @@ const updateProfileImage = async (req, res) => {
   }
 };
 
+// @desc    Submit quiz score
+// @route   POST /api/users/quiz-score
+// @access  Private
+const submitQuizScore = async (req, res) => {
+  try {
+    const { courseId, lessonId, score } = req.body;
+    const userId = req.user._id;
+
+    console.log(`🔍 Received quiz score submission: User=${userId}, Course=${courseId}, Lesson=${lessonId}, Score=${score}`);
+
+    if (!courseId || !lessonId || score === undefined) {
+      return res.status(400).json({ success: false, message: 'Missing required fields' });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      console.log('❌ User not found for quiz submission');
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    // Find progress for this course
+    let progressEntry = user.progress.find(p => p.courseId.toString() === courseId);
+    
+    if (!progressEntry) {
+      console.log('📝 Creating new progress entry for course:', courseId);
+      user.progress.push({
+        courseId,
+        completedLessons: [],
+        quizScores: []
+      });
+      progressEntry = user.progress[user.progress.length - 1];
+    }
+
+    // Add quiz score
+    console.log('📝 Adding quiz score to progress entry');
+    progressEntry.quizScores.push({
+      lessonId,
+      score,
+      attemptedAt: new Date()
+    });
+
+    user.markModified('progress');
+    await user.save();
+    
+    console.log('✅ Quiz score saved successfully');
+
+    res.status(200).json({
+      success: true,
+      message: 'Quiz score submitted successfully'
+    });
+  } catch (error) {
+    console.error('❌ Submit quiz score error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while submitting quiz score',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   getStudents,
   getStudent,
@@ -492,5 +644,6 @@ module.exports = {
   updateStudentProgress,
   getStudentCertificates,
   addStudentNote,
-  updateProfileImage
+  updateProfileImage,
+  submitQuizScore
 };

@@ -3,6 +3,8 @@ const Course = require('../models/Course');
 const Statement = require('../models/Statement');
 const Order = require('../models/Order');
 
+const Student = require('../models/Student');
+
 // @desc    Purchase course (fake payment)
 // @route   POST /api/purchase/:courseId
 // @access  Private
@@ -47,6 +49,39 @@ const purchaseCourse = async (req, res) => {
       await user.save();
     }
 
+    // ⭐ Sync with Student model for Admin Panel
+    try {
+        let studentRecord = await Student.findOne({ user: userId });
+        if (studentRecord) {
+            if (!studentRecord.enrolledCourses.some(e => String(e.course) === String(courseId))) {
+                studentRecord.enrolledCourses.push({
+                    course: courseId,
+                    enrolledAt: new Date(),
+                    progress: 0
+                });
+                studentRecord.updateLearningStats();
+                await studentRecord.save();
+                console.log(`Synced course ${courseId} to Student record for user ${userId}`);
+            }
+        } else {
+            // Create student record if it doesn't exist (e.g. for legacy users)
+            studentRecord = await Student.create({
+                user: userId,
+                enrolledCourses: [{
+                    course: courseId,
+                    enrolledAt: new Date(),
+                    progress: 0
+                }]
+            });
+            studentRecord.updateLearningStats();
+            await studentRecord.save();
+            console.log(`Created and synced Student record for user ${userId}`);
+        }
+    } catch (studentSyncError) {
+        console.error('Error syncing to Student model:', studentSyncError);
+        // Don't fail the whole purchase if student record sync fails, but log it
+    }
+
     // Also mark in course.enrolledStudents (frontend checks this)
     course.enrolledStudents = course.enrolledStudents || [];
     const alreadyInCourse = course.enrolledStudents.some(
@@ -84,6 +119,19 @@ const purchaseCourse = async (req, res) => {
       paymentStatus: "completed",
       paymentMethod: "Other"
     });
+
+    // 5️⃣ Create Notification for Admin
+    try {
+      const Notification = require('../models/Notification');
+      await Notification.create({
+        type: 'purchase',
+        orderId: orderId,
+        message: `New Course Purchase #${orderId} has been placed.`
+      });
+    } catch (notificationError) {
+      console.error('Error creating notification:', notificationError);
+      // Don't fail the whole purchase if notification creation fails
+    }
 
     return res.json({
       success: true,

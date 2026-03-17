@@ -71,6 +71,7 @@ router.get('/', authorize('admin'), certificateController.getCertificates);
 router.get('/:id', certificateController.getCertificate);
 router.put('/:id', authorize('admin'), updateCertificateValidation, certificateController.updateCertificate);
 router.put('/:id/revoke', authorize('admin'), revokeCertificateValidation, certificateController.revokeCertificate);
+router.delete('/:id', authorize('admin'), certificateController.deleteCertificate);
 
 // Download certificate (accessible by admin and the certificate owner)
 router.get('/:id/download', certificateController.downloadCertificate);

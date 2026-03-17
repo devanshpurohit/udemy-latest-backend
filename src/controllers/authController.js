@@ -765,6 +765,59 @@ const removeFromWishlist = async (req, res) => {
   }
 };
 
+// @desc    Resend OTP
+// @route   POST /api/auth/resend-otp
+// @access  Public
+const resendOTP = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Check if user is already verified (only for registration flow)
+    if (user.emailVerified && user.isActive) {
+      // If they are following forgot password flow, we can still resend
+      // But if they are just random, we might want to check
+    }
+
+    // Generate new 4-digit OTP
+    const otp = Math.floor(1000 + Math.random() * 9000).toString();
+    const otpExpire = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    user.otp = otp;
+    user.otpExpire = otpExpire;
+    await user.save({ validateBeforeSave: false });
+
+    // Send OTP email
+    try {
+      await sendOTPEmail(user.email, otp);
+      console.log('Resent OTP successfully to:', user.email);
+    } catch (error) {
+      console.error('Error resending OTP email:', error);
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'New OTP sent to email',
+      // For development purposes, returning OTP. Remove in production.
+      ...(process.env.NODE_ENV !== 'production' && { testOtp: otp })
+    });
+  } catch (error) {
+    console.error('Resend OTP error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error during OTP resend'
+    });
+  }
+};
+
 module.exports = {
   register,
   login,
@@ -777,6 +830,7 @@ module.exports = {
   forgotPassword,
   verifyOtp,
   resetPassword,
+  resendOTP,
   addToWishlist,
   getWishlist,
   removeFromWishlist

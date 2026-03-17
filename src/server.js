@@ -22,6 +22,9 @@ const publicRoutes = require('./routes/public');
 const purchaseRoutes = require('./routes/purchase');
 const reviewRoutes = require("./routes/reviewRoutes");
 const aiCardRoutes = require('./routes/aiCard');
+const siteSettingsRoutes = require('./routes/siteSettings');
+const newsletterRoutes = require('./routes/newsletter');
+const notificationRoutes = require('./routes/notifications');
 
 
 const app = express();
@@ -43,7 +46,9 @@ app.options('*', (req, res) => res.sendStatus(200));
 /* =======================
    SECURITY
 ======================= */
-app.use(helmet());
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" }
+}));
 
 /* =======================
    BODY PARSING
@@ -99,6 +104,9 @@ app.use('/api/public', publicLimiter, publicRoutes); // Apply rate limit then ro
 app.use('/api', purchaseRoutes);
 app.use("/api", reviewRoutes);
 app.use('/api/ai-cards', aiCardRoutes);
+app.use('/api/settings', siteSettingsRoutes);
+app.use('/api/newsletter', newsletterRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 /* =======================
    STATIC FILES
@@ -113,38 +121,24 @@ const srcUploadsPath = path.resolve(__dirname, 'src', 'uploads');
 console.log('Also serving from:', srcUploadsPath);
 console.log('Src uploads directory exists:', require('fs').existsSync(srcUploadsPath));
 
-// Add a simple file server middleware with proper URL decoding
-app.use('/uploads', (req, res, next) => {
-    // Decode the URL to handle spaces and special characters
-    const decodedPath = decodeURIComponent(req.path);
-    
-    // Try main uploads directory first
-    let filePath = path.join(uploadsPath, decodedPath.replace('/uploads', ''));
-    
-    // If not found in main uploads, try src/uploads
-    if (!require('fs').existsSync(filePath)) {
-        filePath = path.join(srcUploadsPath, decodedPath.replace('/uploads', ''));
-    }
-    
-    console.log('Request for:', req.url);
-    console.log('Decoded path:', decodedPath);
-    console.log('File path:', filePath);
-    console.log('File exists:', require('fs').existsSync(filePath));
-    
-    if (require('fs').existsSync(filePath)) {
-        // Set proper headers for images
+// Configure static file options with CORS and security headers
+const staticOptions = {
+    setHeaders: (res) => {
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-        res.sendFile(filePath);
-    } else {
-        console.log('File not found:', filePath);
-        res.status(404).json({ 
-            error: 'File not found', 
-            path: filePath,
-            originalUrl: req.url,
-            decodedPath: decodedPath
-        });
     }
+};
+
+// Serve from main uploads first
+app.use('/uploads', express.static(uploadsPath, staticOptions));
+
+// Then serve from src/uploads for student images
+app.use('/uploads', express.static(srcUploadsPath, staticOptions));
+
+// Log requests for debugging (optional, can be removed after verification)
+app.use('/uploads', (req, res) => {
+    console.log('File not found in any uploads directory:', req.url);
+    res.status(404).json({ error: 'File not found' });
 });
 
 // Test endpoint to check if uploads directory is accessible

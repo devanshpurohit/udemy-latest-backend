@@ -377,47 +377,81 @@ const downloadCertificate = async (req, res) => {
 const createManualCertificate = async (req, res) => {
   try {
     const {
+      studentId,
+      courseId,
       courseTitle,
+      studentName,
+      instructorName,
       duration,
       score,
       template,
       completedAt
     } = req.body;
 
+    if (!studentId || !courseId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Student ID and Course ID are required'
+      });
+    }
+
+    const student = await User.findById(studentId);
+    const course = await Course.findById(courseId).populate('instructor');
+
+    if (!student || !course) {
+      return res.status(404).json({
+        success: false,
+        message: 'Student or Course not found'
+      });
+    }
+
     // Generate unique certificate ID
     const timestamp = Date.now().toString(36);
     const random = Math.random().toString(36).substr(2, 5);
     const certificateId = `CERT-${timestamp}-${random}`.toUpperCase();
 
-    // Create a dummy course reference for manual certificates
-    // We'll use a placeholder ObjectId since course is required
-    const dummyCourseId = new mongoose.Types.ObjectId();
-
-    // Create certificate manually
+    // Create certificate
     const certificate = await Certificate.create({
-      student: req.user.id, // Use admin as placeholder for now
-      course: dummyCourseId, // Use dummy course ID for manual certificates
-      instructor: req.user.id, // Use admin as instructor for now
-      certificateId, // Manually generated certificate ID
-      courseTitle,
-      duration,
-      score,
-      template,
+      student: studentId,
+      course: courseId,
+      instructor: course.instructor?._id || req.user.id,
+      certificateId,
+      courseTitle: courseTitle || course.title,
+      studentName: studentName || `${student.profile?.firstName || ''} ${student.profile?.lastName || ''}`.trim() || student.username,
+      instructorName: instructorName || (course.instructor ? `${course.instructor.profile?.firstName || ''} ${course.instructor.profile?.lastName || ''}`.trim() || course.instructor.username : 'Instructor'),
+      duration: duration || `${course.duration || 0} minutes`,
+      score: score || 0,
+      template: template || 'modern',
       completedAt: completedAt || new Date(),
       metadata: {
-        totalLessons: 0,
+        totalLessons: course.lessons?.length || 0,
         completedLessons: 0,
         averageScore: score || 0,
         timeSpent: 0
       }
     });
 
-    await certificate.populate('student', 'username email');
+    // Update student's enrolled course if it exists
+    const studentDetails = await Student.findOne({ user: studentId });
+    if (studentDetails) {
+      const enrolledCourse = studentDetails.enrolledCourses.id(courseId);
+      if (enrolledCourse) {
+        enrolledCourse.certificate = {
+          issued: true,
+          issuedAt: new Date(),
+          certificateUrl: certificate.certificateId
+        };
+        await studentDetails.save();
+      }
+    }
+
+    await certificate.populate('student', 'username email profile.firstName profile.lastName');
+    await certificate.populate('course', 'title thumbnail');
     await certificate.populate('instructor', 'username profile.firstName profile.lastName');
 
     res.status(201).json({
       success: true,
-      message: 'Certificate created successfully',
+      message: 'Manual certificate created successfully',
       data: { certificate }
     });
   } catch (error) {
@@ -425,6 +459,51 @@ const createManualCertificate = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Server error while creating certificate'
+    });
+  }
+};
+
+// @desc    Delete certificate
+// @route   DELETE /api/certificates/:id
+// @access  Private (Admin)
+const deleteCertificate = async (req, res) => {
+  try {
+    const certificate = await Certificate.findById(req.params.id);
+
+    if (!certificate) {
+      return res.status(404).json({
+        success: false,
+        message: 'Certificate not found'
+      });
+    }
+
+    // Update student's enrolled course if it exists
+    const studentDetails = await Student.findOne({ user: certificate.student });
+    if (studentDetails) {
+      const enrolledCourse = studentDetails.enrolledCourses.id(certificate.course);
+      if (enrolledCourse && enrolledCourse.certificate) {
+        enrolledCourse.certificate = {
+          issued: false,
+          issuedAt: null,
+          certificateUrl: null
+        };
+        await studentDetails.save();
+        console.log(`✅ Reset certificate status for student ${certificate.student} and course ${certificate.course}`);
+      }
+    }
+
+    // Delete the certificate
+    await Certificate.findByIdAndDelete(req.params.id);
+
+    res.status(200).json({
+      success: true,
+      message: 'Certificate deleted successfully'
+    });
+  } catch (error) {
+    console.error('Delete certificate error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while deleting certificate'
     });
   }
 };
@@ -437,5 +516,6 @@ module.exports = {
   revokeCertificate,
   verifyCertificate,
   downloadCertificate,
-  createManualCertificate
+  createManualCertificate,
+  deleteCertificate
 };

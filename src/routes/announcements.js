@@ -93,6 +93,7 @@ const updateAnnouncementValidation = [
 // Public routes (accessible by all authenticated users)
 router.get('/', announcementController.getAnnouncements);
 router.get('/unread/count', announcementController.getUnreadAnnouncementsCount);
+router.put('/unread/mark-all-read', announcementController.markAllAsRead);
 router.get('/:id', announcementController.getAnnouncement);
 
 // Admin only routes

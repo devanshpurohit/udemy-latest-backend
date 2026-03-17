@@ -120,6 +120,7 @@ router.post('/verify-email', verifyEmailValidation, authController.verifyEmail);
 router.post('/login', loginValidation, authController.login);
 router.post('/forgot-password', forgotPasswordValidation, authController.forgotPassword);
 router.post('/verify-otp', verifyOtpValidation, authController.verifyOtp);
+router.post('/resend-otp', forgotPasswordValidation, authController.resendOTP);
 router.post('/reset-password', resetPasswordValidation, authController.resetPassword);
 
 // Protected routes

@@ -93,13 +93,21 @@ const userSchema = new mongoose.Schema({
       type: String,
       default: ''
     },
+    countryCode: {
+      type: String,
+      default: '+91'
+    },
+    language: {
+      type: String,
+      default: 'English'
+    },
     bio: {
       type: String,
       default: ''
     },
     profileImage: {
       type: String,
-      default: "https://picsum.photos/seed/user123/80/80.jpg"
+      default: "/boy.png"
     }
   },
   isActive: {

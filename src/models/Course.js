@@ -211,9 +211,19 @@ const courseSchema = new mongoose.Schema({
   },
   completedSteps: [{
     type: Number
+  }],
+  resources: [{
+    name: String,
+    url: String,
+    type: {
+      type: String,
+      enum: ['pdf', 'video', 'link', 'other']
+    }
   }]
 }, {
-  timestamps: true
+  timestamps: true,
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
 });
 
 // Add indexes for performance optimization
@@ -275,32 +285,44 @@ courseSchema.methods.getLessonById = function(lessonId) {
 
 // Virtual for course statistics
 courseSchema.virtual('stats').get(function() {
+  const sections = this.sections || [];
+  const enrolledStudents = this.enrolledStudents || [];
+  
   return {
-    totalSections: this.sections.length,
-    totalLessons: this.sections.reduce((total, section) => total + section.lessons.length, 0),
-    totalDuration: this.sections.reduce((total, section) => {
-      return total + section.lessons.reduce((lessonTotal, lesson) => lessonTotal + lesson.duration, 0);
+    totalSections: sections.length,
+    totalLessons: sections.reduce((total, section) => total + (section.lessons ? section.lessons.length : 0), 0),
+    totalDuration: sections.reduce((total, section) => {
+      return total + (section.lessons ? section.lessons.reduce((lessonTotal, lesson) => lessonTotal + (lesson.duration || 0), 0) : 0);
     }, 0),
-    totalQuizzes: this.sections.reduce((total, section) => {
-      return total + section.lessons.reduce((lessonTotal, lesson) => lessonTotal + lesson.quizzes.length, 0);
+    totalQuizzes: sections.reduce((total, section) => {
+      return total + (section.lessons ? section.lessons.reduce((lessonTotal, lesson) => lessonTotal + (lesson.quizzes ? lesson.quizzes.length : 0), 0) : 0);
     }, 0),
-    enrolledCount: this.enrolledStudents.length
+    enrolledCount: enrolledStudents.length
   };
+});
+
+courseSchema.virtual('students').get(function() {
+  return this.totalEnrollments || (this.enrolledStudents ? this.enrolledStudents.length : 0);
 });
 
 // Pre-save middleware to calculate total duration
 courseSchema.pre('save', function(next) {
   let totalDuration = 0;
   
-  this.sections.forEach(section => {
-    section.lessons.forEach(lesson => {
-      totalDuration += lesson.duration;
+  if (this.sections && Array.isArray(this.sections)) {
+    this.sections.forEach(section => {
+      if (section.lessons && Array.isArray(section.lessons)) {
+        section.lessons.forEach(lesson => {
+          totalDuration += (lesson.duration || 0);
+        });
+      }
     });
-  });
+  }
   
-  // Update duration field if not set
-  if (!this.duration) {
+  // Update duration field if not set or zero
+  if (!this.duration || this.duration === 0) {
     this.duration = Math.ceil(totalDuration / (60 * 8 * 30)); // Convert minutes to months (8h/day, 30 days/month)
+    if (this.duration === 0) this.duration = 1; // Minimum 1 month
   }
   
   next();
@@ -319,7 +341,7 @@ courseSchema.methods.calculateAverageRating = function() {
 
 // Update total enrollments
 courseSchema.methods.updateTotalEnrollments = function() {
-  this.totalEnrollments = this.enrolledStudents.length;
+  this.totalEnrollments = (this.enrolledStudents && Array.isArray(this.enrolledStudents)) ? this.enrolledStudents.length : 0;
 };
 
 // Update total revenue

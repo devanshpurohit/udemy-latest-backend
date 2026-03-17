@@ -14,6 +14,15 @@ const createAnnouncement = async (req, res) => {
     const announcement = await Announcement.create(announcementData);
     await announcement.populate('author', 'username profile.firstName profile.lastName');
 
+    // Emit socket event for real-time update
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('newAnnouncement', {
+        announcement,
+        message: 'A new announcement has been posted'
+      });
+    }
+
     res.status(201).json({
       success: true,
       message: 'Announcement created successfully',
@@ -299,6 +308,56 @@ const getUnreadAnnouncementsCount = async (req, res) => {
   }
 };
 
+// @desc    Mark all announcements as read for current user
+// @route   PUT /api/announcements/unread/mark-all-read
+// @access  Private
+const markAllAsRead = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const filter = {
+      isActive: true,
+      scheduledFor: { $lte: new Date() },
+      $or: [
+        { expiresAt: { $exists: false } },
+        { expiresAt: { $gte: new Date() } }
+      ]
+    };
+
+    // Filter by user role if not admin
+    if (req.user.role !== 'admin') {
+      filter.$or = [
+        { targetAudience: 'all' },
+        { targetAudience: req.user.role }
+      ];
+    }
+
+    // Find all active announcements not yet read by this user
+    const announcements = await Announcement.find({
+      ...filter,
+      'readBy.user': { $ne: userId }
+    });
+
+    // Mark each as read
+    const updatePromises = announcements.map(announcement => {
+      announcement.readBy.push({ user: userId });
+      return announcement.save();
+    });
+
+    await Promise.all(updatePromises);
+
+    res.status(200).json({
+      success: true,
+      message: 'All announcements marked as read'
+    });
+  } catch (error) {
+    console.error('Mark all as read error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while marking announcements as read'
+    });
+  }
+};
+
 module.exports = {
   createAnnouncement,
   getAnnouncements,
@@ -306,5 +365,6 @@ module.exports = {
   updateAnnouncement,
   deleteAnnouncement,
   toggleAnnouncementStatus,
-  getUnreadAnnouncementsCount
+  getUnreadAnnouncementsCount,
+  markAllAsRead
 };

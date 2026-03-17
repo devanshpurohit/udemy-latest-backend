@@ -43,7 +43,7 @@ const certificateSchema = new mongoose.Schema({
   },
   duration: {
     type: String, // e.g., "6 weeks", "30 hours"
-    required: true
+    required: false
   },
   grade: {
     type: String,

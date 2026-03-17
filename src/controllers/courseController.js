@@ -221,7 +221,8 @@ const saveCourseMedia = async (req, res) => {
     const mediaData = {
       courseImage: req.body.courseImage || '',
       thumbnail: req.body.thumbnail || '',
-      previewVideo: req.body.previewVideo || ''
+      previewVideo: req.body.previewVideo || '',
+      resources: req.body.resources || []
     };
     
     const course = await Course.findByIdAndUpdate(
@@ -407,10 +408,22 @@ const getCourses = async (req, res) => {
 
     // If user is not admin, only show their courses or published courses
     if (req.user.role !== 'admin') {
-      filter.$or = [
-        { instructor: req.user.id },
-        { status: 'published' }
-      ];
+      const accessFilter = {
+        $or: [
+          { instructor: req.user.id },
+          { status: 'published' }
+        ]
+      };
+
+      // If we already have a filter (like search), combine them with $and
+      if (Object.keys(filter).length > 0) {
+        const existingFilter = { ...filter };
+        // Clear old filter keys and wrap in $and
+        Object.keys(existingFilter).forEach(key => delete filter[key]);
+        filter.$and = [existingFilter, accessFilter];
+      } else {
+        filter.$or = accessFilter.$or;
+      }
     }
 
     // Sort options
@@ -797,6 +810,159 @@ const addQuizToLesson = async (req, res) => {
   }
 };
 
+// @desc    Update section
+// @route   PUT /api/courses/:id/sections/:sectionId
+// @access  Private (Admin/Instructor)
+const updateSection = async (req, res) => {
+  try {
+    const course = await Course.findById(req.params.id);
+    if (!course) return res.status(404).json({ success: false, message: 'Course not found' });
+
+    if (req.user.role !== 'admin' && course.instructor.toString() !== req.user.id) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    const section = course.sections.id(req.params.sectionId);
+    if (!section) return res.status(404).json({ success: false, message: 'Section not found' });
+
+    Object.assign(section, req.body);
+    await course.save();
+
+    res.status(200).json({ success: true, message: 'Section updated', data: { section } });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Delete section
+// @route   DELETE /api/courses/:id/sections/:sectionId
+// @access  Private (Admin/Instructor)
+const deleteSection = async (req, res) => {
+  try {
+    const course = await Course.findById(req.params.id);
+    if (!course) return res.status(404).json({ success: false, message: 'Course not found' });
+
+    if (req.user.role !== 'admin' && course.instructor.toString() !== req.user.id) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    course.sections.pull(req.params.sectionId);
+    await course.save();
+
+    res.status(200).json({ success: true, message: 'Section deleted' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Update lesson in section
+// @route   PUT /api/courses/:id/sections/:sectionId/lessons/:lessonId
+// @access  Private (Admin/Instructor)
+const updateLessonInSection = async (req, res) => {
+  try {
+    const course = await Course.findById(req.params.id);
+    if (!course) return res.status(404).json({ success: false, message: 'Course not found' });
+
+    if (req.user.role !== 'admin' && course.instructor.toString() !== req.user.id) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    const section = course.sections.id(req.params.sectionId);
+    if (!section) return res.status(404).json({ success: false, message: 'Section not found' });
+
+    const lesson = section.lessons.id(req.params.lessonId);
+    if (!lesson) return res.status(404).json({ success: false, message: 'Lesson not found' });
+
+    Object.assign(lesson, req.body);
+    await course.save();
+
+    res.status(200).json({ success: true, message: 'Lesson updated', data: { lesson } });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Delete lesson from section
+// @route   DELETE /api/courses/:id/sections/:sectionId/lessons/:lessonId
+// @access  Private (Admin/Instructor)
+const deleteLessonFromSection = async (req, res) => {
+  try {
+    const course = await Course.findById(req.params.id);
+    if (!course) return res.status(404).json({ success: false, message: 'Course not found' });
+
+    if (req.user.role !== 'admin' && course.instructor.toString() !== req.user.id) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    const section = course.sections.id(req.params.sectionId);
+    if (!section) return res.status(404).json({ success: false, message: 'Section not found' });
+
+    section.lessons.pull(req.params.lessonId);
+    await course.save();
+
+    res.status(200).json({ success: true, message: 'Lesson deleted' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Update quiz
+// @route   PUT /api/courses/:id/sections/:sectionId/lessons/:lessonId/quiz/:quizId
+// @access  Private (Admin/Instructor)
+const updateQuiz = async (req, res) => {
+  try {
+    const course = await Course.findById(req.params.id);
+    if (!course) return res.status(404).json({ success: false, message: 'Course not found' });
+
+    if (req.user.role !== 'admin' && course.instructor.toString() !== req.user.id) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    const section = course.sections.id(req.params.sectionId);
+    if (!section) return res.status(404).json({ success: false, message: 'Section not found' });
+
+    const lesson = section.lessons.id(req.params.lessonId);
+    if (!lesson) return res.status(404).json({ success: false, message: 'Lesson not found' });
+
+    const quiz = lesson.quizzes.id(req.params.quizId);
+    if (!quiz) return res.status(404).json({ success: false, message: 'Quiz not found' });
+
+    Object.assign(quiz, req.body);
+    await course.save();
+
+    res.status(200).json({ success: true, message: 'Quiz updated', data: { quiz } });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Delete quiz
+// @route   DELETE /api/courses/:id/sections/:sectionId/lessons/:lessonId/quiz/:quizId
+// @access  Private (Admin/Instructor)
+const deleteQuiz = async (req, res) => {
+  try {
+    const course = await Course.findById(req.params.id);
+    if (!course) return res.status(404).json({ success: false, message: 'Course not found' });
+
+    if (req.user.role !== 'admin' && course.instructor.toString() !== req.user.id) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    const section = course.sections.id(req.params.sectionId);
+    if (!section) return res.status(404).json({ success: false, message: 'Section not found' });
+
+    const lesson = section.lessons.id(req.params.lessonId);
+    if (!lesson) return res.status(404).json({ success: false, message: 'Lesson not found' });
+
+    lesson.quizzes.pull(req.params.quizId);
+    await course.save();
+
+    res.status(200).json({ success: true, message: 'Quiz deleted' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 // @desc    Get lesson with quizzes
 // @route   GET /api/courses/:id/sections/:sectionId/lessons/:lessonId
 // @access  Private
@@ -1076,6 +1242,28 @@ const uploadCourseVideo = async (req, res) => {
   }
 };
 
+// @desc    Get all course titles and IDs (for dropdowns)
+// @route   GET /api/courses/list
+// @access  Private
+const getCourseList = async (req, res) => {
+  try {
+    const courses = await Course.find({})
+      .select('title')
+      .sort({ title: 1 });
+
+    res.status(200).json({
+      success: true,
+      data: courses
+    });
+  } catch (error) {
+    console.error('Get course list error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while fetching course list'
+    });
+  }
+};
+
 module.exports = {
   createCourse,
   getCourses,
@@ -1091,6 +1279,12 @@ module.exports = {
   addLessonToSection,
   addQuizToLesson,
   getLesson,
+  updateSection,
+  deleteSection,
+  updateLessonInSection,
+  deleteLessonFromSection,
+  updateQuiz,
+  deleteQuiz,
   // Wizard functions
   saveCourseDraft,
   updateCourseDraft,
@@ -1100,5 +1294,6 @@ module.exports = {
   saveCourseMedia,
   publishCourse,
   validateCourse,
-  uploadCourseVideo
+  uploadCourseVideo,
+  getCourseList
 };

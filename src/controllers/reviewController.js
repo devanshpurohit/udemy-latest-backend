@@ -5,7 +5,7 @@ exports.getReviews = async (req, res) => {
 
     const reviews = await Review.find({
       courseId: req.params.courseId
-    }).populate("userId", "name profileImage");
+    }).populate("userId", "username profile");
 
     res.json({
       success: true,
@@ -26,7 +26,7 @@ exports.createReview = async (req, res) => {
   try {
     const { rating, comment } = req.body;
     const { courseId } = req.params;
-    const userId = req.user?.id; // Get user ID from auth middleware
+    const userId = req.user?.id;
 
     if (!userId) {
       return res.status(401).json({
@@ -36,10 +36,7 @@ exports.createReview = async (req, res) => {
     }
 
     // Check if user already reviewed this course
-    const existingReview = await Review.findOne({
-      courseId,
-      userId
-    });
+    const existingReview = await Review.findOne({ courseId, userId });
 
     if (existingReview) {
       return res.status(400).json({
@@ -48,18 +45,11 @@ exports.createReview = async (req, res) => {
       });
     }
 
-    // Create new review
-    const review = new Review({
-      courseId,
-      userId,
-      rating,
-      comment
-    });
-
+    const review = new Review({ courseId, userId, rating, comment });
     await review.save();
 
     // Populate user details for response
-    await review.populate("userId", "name profileImage");
+    await review.populate("userId", "username profile");
 
     res.status(201).json({
       success: true,

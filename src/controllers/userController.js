@@ -42,11 +42,18 @@ const updateProfile = async (req, res) => {
 
     const { name, email, phone, countryCode, language, profile } = req.body;
 
-    if (name) user.name = name;
+    if (name) user.username = name; // Mapping name to username or creating a separate name field if needed, but username is required
     if (email) user.email = email;
-    if (phone) user.phone = phone;
-    if (countryCode) user.countryCode = countryCode;
-    if (language) user.language = language;
+    
+    // Ensure profile exists
+    if (!user.profile) user.profile = {};
+    
+    if (phone) user.profile.phone = phone;
+    // We'll keep countryCode and language as root fields for now if they are used elsewhere, 
+    // but since they aren't in the schema, we should ideally add them or put them in profile.
+    // Given the schema doesn't have them, let's put them in profile for better organization.
+    if (countryCode) user.profile.countryCode = countryCode;
+    if (language) user.profile.language = language;
 
     // ⭐ profile image update
     if (profile?.profileImage) {
@@ -126,7 +133,9 @@ const getDashboard = async (req, res) => {
           role: userWithEnrolledCourses.role,
           profile: {
             ...userWithEnrolledCourses.profile,
-            profileImage: userWithEnrolledCourses.profile?.profileImage || "https://picsum.photos/seed/user123/80/80.jpg"
+            profileImage: (userWithEnrolledCourses.profile?.profileImage && !userWithEnrolledCourses.profile.profileImage.includes('picsum.photos')) 
+              ? userWithEnrolledCourses.profile.profileImage 
+              : "/boy.png"
           }
         },
         enrolledCourses: userWithEnrolledCourses.enrolledCourses || [],
@@ -136,7 +145,11 @@ const getDashboard = async (req, res) => {
           totalEnrolled: userWithEnrolledCourses.enrolledCourses?.length || 0,
           totalActive: userWithEnrolledCourses.enrolledCourses?.filter(c => c.status === 'active')?.length || 0,
           totalCompleted: userWithEnrolledCourses.enrolledCourses?.filter(c => c.status === 'completed')?.length || 0,
-          totalQuizzes: 0 // Will be added later
+          totalQuizzes: (userWithEnrolledCourses.progress || []).reduce((acc, curr) => {
+            // Count unique lessons that have at least one quiz attempt
+            const uniqueQuizzes = new Set((curr.quizScores || []).map(q => q.lessonId.toString()));
+            return acc + uniqueQuizzes.size;
+          }, 0)
         }
       }
     });
