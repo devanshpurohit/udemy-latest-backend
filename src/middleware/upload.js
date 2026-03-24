@@ -12,7 +12,7 @@ const ensureUploadDir = (dir) => {
 // Storage configuration
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    let uploadPath = path.resolve(__dirname, '..', '..', 'uploads');
+    let uploadPath = path.resolve(__dirname, '..', 'uploads');
     
     console.log('Current __dirname:', __dirname);
     console.log('Calculated uploadPath:', uploadPath);
@@ -38,7 +38,7 @@ const storage = multer.diskStorage({
     // Generate unique filename
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     const ext = path.extname(file.originalname);
-    const name = path.basename(file.originalname, ext);
+    const name = path.basename(file.originalname, ext).replace(/\s+/g, '-');
     const filename = `${name}-${uniqueSuffix}${ext}`;
     console.log('Generated filename:', filename);
     cb(null, filename);

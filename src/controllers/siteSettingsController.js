@@ -52,6 +52,13 @@ const updateSettings = async (req, res) => {
     settings.updatedAt = Date.now();
     await settings.save();
 
+    // 🚀 EMIT SOCKET MESSAGE FOR REAL-TIME UPDATES
+    const io = req.app.get('io');
+    if (io) {
+      console.log('📡 Emitting settings_updated event to all clients');
+      io.emit('settings_updated', settings);
+    }
+
     res.status(200).json({
       success: true,
       message: 'Site settings updated successfully',

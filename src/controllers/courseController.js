@@ -113,7 +113,8 @@ const getCourseDraft = async (req, res) => {
     }
 
     const course = await Course.findById(id)
-      .populate('instructor', 'username profile.firstName profile.lastName');
+      .populate('instructor', 'username profile.firstName profile.lastName')
+      .lean();
 
     if (!course) {
       return res.status(404).json({
@@ -430,14 +431,17 @@ const getCourses = async (req, res) => {
     const sort = {};
     sort[sortBy] = sortOrder === 'desc' ? -1 : 1;
 
-    const courses = await Course.find(filter)
-      .populate('instructor', 'username profile.firstName profile.lastName')
-      .sort(sort)
-      .limit(limit * 1)
-      .skip((page - 1) * limit)
-      .exec();
-
-    const total = await Course.countDocuments(filter);
+    // 🚀 Concurrent fetching of courses and total count
+    const [courses, total] = await Promise.all([
+      Course.find(filter)
+        .populate('instructor', 'username profile.firstName profile.lastName')
+        .sort(sort)
+        .limit(limit * 1)
+        .skip((page - 1) * limit)
+        .select('-sections -lessons')
+        .lean(),
+      Course.countDocuments(filter)
+    ]);
 
     res.status(200).json({
       success: true,
@@ -467,7 +471,8 @@ const getCourse = async (req, res) => {
   try {
     const course = await Course.findById(req.params.id)
       .populate('instructor', 'username profile.firstName profile.lastName email')
-      .populate('enrolledStudents', 'username profile.firstName profile.lastName email');
+      .populate('enrolledStudents', 'username profile.firstName profile.lastName email')
+      .lean();
 
     if (!course) {
       return res.status(404).json({

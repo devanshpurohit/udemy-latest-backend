@@ -1,0 +1,64 @@
+Connected to MongoDB
+Found 4 users with progress entries.
+
+--- User: vineet (69b13ec5973491928e15f75b) ---
+Course: fdxv (69b11895e80985c063aba29a)
+  - Total lessons in DB (sections): 1
+  - Completed lessons in User model: 0
+  - No matching enrollment in Student model for this course.
+
+--- User: garv (69b17112a53b1265d85f95cc) ---
+Course: fdxv (69b11895e80985c063aba29a)
+  - Total lessons in DB (sections): 1
+  - Completed lessons in User model: 1
+  - Completed lessons in Student model: 1
+  - Progress percentage in Student model: 100%
+Course: fdxgv (69b11494e80985c063ab9d48)
+  - Total lessons in DB (sections): 1
+  - Completed lessons in User model: 0
+  - Completed lessons in Student model: 0
+  - Progress percentage in Student model: 0%
+Course: kjghvc (69b3b5458be6c29e7f9be865)
+  - Total lessons in DB (sections): 1
+  - Completed lessons in User model: 1
+  - Completed lessons in Student model: 1
+  - Progress percentage in Student model: 100%
+Course: UI/UX (69a953048359e5746264538c)
+  - Total lessons in DB (sections): 1
+  - Completed lessons in User model: 0
+  - Completed lessons in Student model: 0
+  - Progress percentage in Student model: 0%
+Course: ddddd (69b1098dd5916d5d7266c763)
+  - Total lessons in DB (sections): 3
+  - Completed lessons in User model: 0
+  - Completed lessons in Student model: 0
+  - Progress percentage in Student model: 0%
+Course: DEVOPS (69a9520e8359e574626452f7)
+  - Total lessons in DB (sections): 1
+  - Completed lessons in User model: 0
+  - Completed lessons in Student model: 0
+  - Progress percentage in Student model: 0%
+
+--- User: mohit (69b25bc003e001038c0158e9) ---
+Course: kjghvc (69b3b5458be6c29e7f9be865)
+  - Total lessons in DB (sections): 1
+  - Completed lessons in User model: 1
+  - Completed lessons in Student model: 1
+  - Progress percentage in Student model: 100%
+Course: fdxv (69b11895e80985c063aba29a)
+  - Total lessons in DB (sections): 1
+  - Completed lessons in User model: 0
+  - Completed lessons in Student model: 0
+  - Progress percentage in Student model: 0%
+Course: DEVOPS (69a9520e8359e574626452f7)
+  - Total lessons in DB (sections): 1
+  - Completed lessons in User model: 1
+  - Completed lessons in Student model: 1
+  - Progress percentage in Student model: 100%
+
+--- User: devansh (69b28ba63e3ae1654b747543) ---
+Course: fdxv (69b11895e80985c063aba29a)
+  - Total lessons in DB (sections): 1
+  - Completed lessons in User model: 1
+  - Completed lessons in Student model: 1
+  - Progress percentage in Student model: 100%

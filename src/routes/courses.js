@@ -242,14 +242,14 @@ router.post('/:id/upload-thumbnail', authorize('admin', 'instructor'), uploadSin
     }
 
     // Update course thumbnail
-    course.thumbnail = req.file.path;
+    course.thumbnail = `/uploads/thumbnails/${req.file.filename}`;
     await course.save();
 
     res.status(200).json({
       success: true,
       message: 'Thumbnail uploaded successfully',
       data: {
-        thumbnail: req.file.path
+        thumbnail: `/uploads/thumbnails/${req.file.filename}`
       }
     });
   } catch (error) {
@@ -303,14 +303,14 @@ router.post('/:id/lessons/:lessonId/upload-video', authorize('admin', 'instructo
     }
 
     // Update lesson video
-    lesson.videoUrl = req.file.path;
+    lesson.videoUrl = `/uploads/videos/${req.file.filename}`;
     await course.save();
 
     res.status(200).json({
       success: true,
       message: 'Video uploaded successfully',
       data: {
-        videoUrl: req.file.path
+        videoUrl: `/uploads/videos/${req.file.filename}`
       }
     });
   } catch (error) {

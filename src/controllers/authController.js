@@ -724,7 +724,8 @@ const getWishlist = async (req, res) => {
     const courses = await Course.find({
       _id: { $in: user.wishlist }
     })
-      .select("title price thumbnail courseImage rating")
+      .select("title price discountedPrice thumbnail courseImage averageRating numReviews description instructor status")
+      .populate('instructor', 'username')
       .lean();
 
     console.timeEnd("wishlistQuery");

@@ -110,6 +110,36 @@ const userSchema = new mongoose.Schema({
       default: "/boy.png"
     }
   },
+  billing: {
+    fullName: {
+      type: String,
+      default: ''
+    },
+    email: {
+      type: String,
+      default: ''
+    },
+    country: {
+      type: String,
+      default: ''
+    },
+    address: {
+      type: String,
+      default: ''
+    },
+    city: {
+      type: String,
+      default: ''
+    },
+    state: {
+      type: String,
+      default: ''
+    },
+    zipCode: {
+      type: String,
+      default: ''
+    }
+  },
   isActive: {
     type: Boolean,
     default: true
@@ -210,20 +240,33 @@ userSchema.methods.enrollInCourse = function(courseId) {
 };
 
 userSchema.methods.markLessonComplete = function(courseId, lessonId, timeSpent = 0) {
-  const progress = this.progress.find(p => p.courseId.toString() === courseId.toString());
-  if (progress) {
-    const existingLesson = progress.completedLessons.find(l => l.lessonId.toString() === lessonId.toString());
-    if (!existingLesson) {
-      progress.completedLessons.push({
-        lessonId: lessonId,
-        completedAt: new Date(),
-        timeSpent: timeSpent
-      });
-    } else {
-      existingLesson.timeSpent += timeSpent;
-    }
-    progress.lastAccessedAt = new Date();
+  let progress = this.progress.find(p => p.courseId.toString() === courseId.toString());
+  
+  if (!progress) {
+    // Initialize progress if it doesn't exist
+    this.progress.push({
+      courseId: courseId,
+      completedLessons: [],
+      quizScores: [],
+      currentLesson: lessonId,
+      enrolledAt: new Date(),
+      lastAccessedAt: new Date()
+    });
+    progress = this.progress[this.progress.length - 1];
   }
+
+  const existingLesson = progress.completedLessons.find(l => l.lessonId.toString() === lessonId.toString());
+  if (!existingLesson) {
+    progress.completedLessons.push({
+      lessonId: lessonId,
+      completedAt: new Date(),
+      timeSpent: timeSpent
+    });
+  } else {
+    existingLesson.timeSpent += timeSpent;
+  }
+  progress.lastAccessedAt = new Date();
+  
   return this.save();
 };
 

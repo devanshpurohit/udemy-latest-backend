@@ -71,29 +71,35 @@ const getStudents = async (req, res) => {
     sort[sortBy] = sortOrder === 'desc' ? -1 : 1;
 
     // Get students with pagination
-    const total = await User.countDocuments(filter);
-    console.log('Total students count:', total);
-    
-    const students = await User.find(filter)
-      .select('-password')
-      .sort(sort)
-      .limit(limit * 1)
-      .skip((page - 1) * limit)
-      .exec();
+    // 🚀 Concurrent fetching of total count and students
+    const [total, students] = await Promise.all([
+      User.countDocuments(filter),
+      User.find(filter)
+        .select('-password')
+        .sort(sort)
+        .limit(limit * 1)
+        .skip((page - 1) * limit)
+        .lean()
+    ]);
 
     console.log('Students found:', students.length);
 
     // Get student details for each user
     const studentsWithDetails = await Promise.all(
       students.map(async (student) => {
-        const studentDetails = await Student.findOne({ user: student._id })
-          .populate({
-            path: 'enrolledCourses.course',
-            select: 'title thumbnail instructor totalEnrollments'
-          });
-        
+        const [studentDetails, certificateCount] = await Promise.all([
+          Student.findOne({ user: student._id })
+            .populate({
+              path: 'enrolledCourses.course',
+              select: 'title thumbnail instructor totalEnrollments'
+            })
+            .lean(),
+          Certificate.countDocuments({ student: student._id, isRevoked: { $ne: true } })
+        ]);
+
         return {
-          ...student.toObject(),
+          ...student,
+          certificateCount,
           studentDetails: studentDetails || {
             enrolledCourses: [],
             learningStats: {
@@ -138,7 +144,8 @@ const getStudents = async (req, res) => {
 const getStudent = async (req, res) => {
   try {
     const student = await User.findOne({ _id: req.params.id, role: 'student' })
-      .select('-password');
+      .select('-password')
+      .lean();
 
     if (!student) {
       return res.status(404).json({
@@ -155,7 +162,8 @@ const getStudent = async (req, res) => {
           path: 'sections.lessons',
           select: 'title type duration'
         }
-      });
+      })
+      .lean();
 
     // Fetch AI Card used by this student
     const AICard = require('../models/AICard');
@@ -193,10 +201,10 @@ const getStudent = async (req, res) => {
       success: true,
       data: {
         student: {
-          ...student.toObject(),
+          ...student,
           aiCard: aiCard || null,
           studentDetails: studentDetails ? {
-            ...studentDetails.toObject(),
+            ...studentDetails,
             quizStats
           } : {
             enrolledCourses: [],
@@ -295,7 +303,8 @@ const getStudentProgress = async (req, res) => {
       .populate({
         path: 'enrolledCourses.course',
         select: 'title thumbnail instructor totalEnrollments'
-      });
+      })
+      .lean();
 
     if (!student) {
       return res.status(404).json({
@@ -384,12 +393,28 @@ const updateStudentProgress = async (req, res) => {
         // 🚀 Auto-calculate progress percentage
         try {
             const Course = require('../models/Course');
-            const course = await Course.findById(courseId);
+            const course = await Course.findById(courseId).lean();
             if (course) {
-                const totalLessons = course.sections.reduce((total, section) => total + section.lessons.length, 0);
+                // Count lessons from sections
+                let totalLessons = 0;
+                if (course.sections && Array.isArray(course.sections)) {
+                    course.sections.forEach(s => {
+                        if (s.lessons && Array.isArray(s.lessons)) {
+                            totalLessons += s.lessons.length;
+                        }
+                    });
+                } else if (course.lessons && Array.isArray(course.lessons)) {
+                    totalLessons = course.lessons.length;
+                }
+                
+                // Fallback to course.totalLessons if calculation results in 0
+                if (totalLessons === 0 && course.totalLessons) {
+                    totalLessons = course.totalLessons;
+                }
+
                 if (totalLessons > 0) {
                     enrolledCourse.progress = Math.round((enrolledCourse.completedLessons.length / totalLessons) * 100);
-                    console.log(`Calculated progress for student ${studentId} in course ${courseId}: ${enrolledCourse.progress}%`);
+                    console.log(`✅ Progress Updated: Student=${studentId}, Course=${courseId}, Progress=${enrolledCourse.progress}%, TotalLessons=${totalLessons}`);
                 }
             }
         } catch (courseError) {
@@ -398,11 +423,44 @@ const updateStudentProgress = async (req, res) => {
       }
     }
 
-    // Update statistics
-    student.updateLearningStats();
+    // Sync with User model (for dashboard and other site-wide progress bars)
+    try {
+        const user = await User.findById(studentId);
+        if (user) {
+            // Use markLessonComplete method if it exists, otherwise manual sync
+            if (typeof user.markLessonComplete === 'function' && lessonId) {
+                await user.markLessonComplete(courseId, lessonId);
+                console.log(`✅ Progress synced to User model using method for ${studentId}`);
+            } else {
+                let userProgressEntry = user.progress.find(p => p.courseId.toString() === courseId);
+                if (!userProgressEntry) {
+                    user.progress.push({
+                        courseId: courseId,
+                        completedLessons: [],
+                        quizScores: []
+                    });
+                    userProgressEntry = user.progress[user.progress.length - 1];
+                }
 
-    // Update last accessed time
-    enrolledCourse.lastAccessedAt = new Date();
+                if (lessonId) {
+                    const isLessonAlreadyInUser = userProgressEntry.completedLessons.some(
+                        l => (l.lessonId || l._id || l.lesson)?.toString() === lessonId
+                    );
+                    if (!isLessonAlreadyInUser) {
+                        userProgressEntry.completedLessons.push({
+                            lessonId: lessonId,
+                            completedAt: new Date()
+                        });
+                        user.markModified('progress');
+                        await user.save();
+                        console.log(`✅ Progress manually synced to User model for ${studentId}`);
+                    }
+                }
+            }
+        }
+    } catch (userSyncError) {
+        console.error('Error syncing progress to User model:', userSyncError);
+    }
 
     await student.save();
 
@@ -430,7 +488,8 @@ const getStudentCertificates = async (req, res) => {
       .populate({
         path: 'course',
         select: 'title duration instructorName grade score'
-      });
+      })
+      .lean();
 
     res.status(200).json({
       success: true,

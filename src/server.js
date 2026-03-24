@@ -4,7 +4,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
-require('dotenv').config();
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 // Routes
 const authRoutes = require('./routes/auth');
@@ -25,6 +25,11 @@ const aiCardRoutes = require('./routes/aiCard');
 const siteSettingsRoutes = require('./routes/siteSettings');
 const newsletterRoutes = require('./routes/newsletter');
 const notificationRoutes = require('./routes/notifications');
+const questionRoutes = require('./routes/questionRoutes');
+const conversationRoutes = require('./routes/conversations');
+const feedbackRoutes = require('./routes/feedbackRoutes');
+
+
 
 
 const app = express();
@@ -38,7 +43,11 @@ app.set('trust proxy', 1);
 /* =======================
    ✅ CORS — FIRST (MUST BE FIRST)
 ======================= */
-app.use(cors());
+app.use(cors({
+  origin: (origin, callback) => callback(null, true),
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+}));
 
 // ✅ ALWAYS allow preflight
 app.options('*', (req, res) => res.sendStatus(200));
@@ -107,101 +116,31 @@ app.use('/api/ai-cards', aiCardRoutes);
 app.use('/api/settings', siteSettingsRoutes);
 app.use('/api/newsletter', newsletterRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/questions', questionRoutes);
+app.use('/api/conversations', conversationRoutes);
+app.use('/api/feedback', feedbackRoutes);
 
 /* =======================
    STATIC FILES
 ======================= */
-// Serve static files from uploads directory (absolute path)
-const uploadsPath = path.resolve(__dirname, '..', 'uploads');
+// Serve static files from uploads directory
+const uploadsPath = path.join(__dirname, 'uploads');
 console.log('Serving static files from:', uploadsPath);
-console.log('Uploads directory exists:', require('fs').existsSync(uploadsPath));
-
-// Also serve from src/uploads for student images
-const srcUploadsPath = path.resolve(__dirname, 'src', 'uploads');
-console.log('Also serving from:', srcUploadsPath);
-console.log('Src uploads directory exists:', require('fs').existsSync(srcUploadsPath));
 
 // Configure static file options with CORS and security headers
 const staticOptions = {
-    setHeaders: (res) => {
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-    }
+  setHeaders: (res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  }
 };
 
-// Serve from main uploads first
 app.use('/uploads', express.static(uploadsPath, staticOptions));
 
-// Then serve from src/uploads for student images
-app.use('/uploads', express.static(srcUploadsPath, staticOptions));
-
-// Log requests for debugging (optional, can be removed after verification)
+// Fallback for not found files in uploads
 app.use('/uploads', (req, res) => {
-    console.log('File not found in any uploads directory:', req.url);
-    res.status(404).json({ error: 'File not found' });
-});
-
-// Test endpoint to check if uploads directory is accessible
-app.get('/test-uploads', (req, res) => {
-    const fs = require('fs');
-    try {
-        const avatarsPath = path.join(srcUploadsPath, 'avatars');
-        console.log('Checking avatars path:', avatarsPath);
-        console.log('Avatars directory exists:', fs.existsSync(avatarsPath));
-        
-        if (fs.existsSync(avatarsPath)) {
-            const files = fs.readdirSync(avatarsPath);
-            res.json({
-                success: true,
-                uploadsPath: uploadsPath,
-                srcUploadsPath: srcUploadsPath,
-                avatarsPath: avatarsPath,
-                files: files.slice(0, 10) // Show first 10 files
-            });
-        } else {
-            res.json({
-                success: false,
-                error: 'Avatars directory does not exist',
-                uploadsPath: uploadsPath,
-                srcUploadsPath: srcUploadsPath,
-                avatarsPath: avatarsPath
-            });
-        }
-    } catch (error) {
-        res.json({
-            success: false,
-            error: error.message,
-            uploadsPath: uploadsPath,
-            srcUploadsPath: srcUploadsPath
-        });
-    }
-});
-
-// Test specific file
-app.get('/test-file/:filename', (req, res) => {
-    const fs = require('fs');
-    const filename = req.params.filename;
-    
-    // Try main uploads first
-    let filePath = path.join(uploadsPath, 'avatars', filename);
-    
-    // If not found, try src/uploads
-    if (!fs.existsSync(filePath)) {
-        filePath = path.join(srcUploadsPath, 'avatars', filename);
-    }
-    
-    console.log('Testing file:', filePath);
-    console.log('File exists:', fs.existsSync(filePath));
-    
-    if (fs.existsSync(filePath)) {
-        res.sendFile(filePath);
-    } else {
-        res.status(404).json({
-            success: false,
-            error: 'File not found',
-            filePath: filePath
-        });
-    }
+  console.log('File not found in any uploads directory:', req.url);
+  res.status(404).json({ error: 'File not found' });
 });
 
 /* =======================
@@ -241,27 +180,72 @@ const PORT = process.env.PORT || 5002;
 const BASE_URL = process.env.BASE_URL || 'http://localhost:5002';
 
 const server = app.listen(PORT, () => {
-    console.log(`🚀 Server running on port ${PORT}`);
-    console.log(`🌐 API Base URL: ${BASE_URL}`);
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`🌐 API Base URL: ${BASE_URL}`);
 });
 
 // 🚀 STEP 4 — Backend Socket Setup
 const io = new Server(server, {
   cors: {
-    origin: "*",
-    methods: ["GET","POST"]
-  }
+    origin: (origin, callback) => callback(null, true),
+    methods: ["GET", "POST"],
+    credentials: true,
+    allowedHeaders: ["Content-Type", "Authorization"]
+  },
+  allowEIO3: true // Support older clients if any
 });
 
 // Store io in app for controllers to access
 app.set('io', io);
 
+const Conversation = require('./models/Conversation');
+const Message = require('./models/Message');
+
 io.on("connection", (socket) => {
   console.log("User connected:", socket.id);
 
-  socket.on("sendMessage", (data) => {
-    console.log("Message received via socket:", data);
-    io.emit("receiveMessage", data);
+  // 📡 Step 4: Join room
+  socket.on("join", (userId) => {
+    console.log(`👤 User ${userId} joined their room`);
+    socket.join(userId);
+  });
+
+  // 💬 Step 5: Send message
+  socket.on("sendMessage", async (data) => {
+    try {
+      console.log("Message received via socket:", data);
+      const { senderId, receiverId, text, conversationId } = data;
+
+      if (!text || !senderId || !receiverId || !conversationId) {
+        console.error("❌ Invalid message data:", data);
+        return;
+      }
+
+      // 1. Save message to DB
+      const newMessage = new Message({
+        conversationId,
+        sender: senderId,
+        text
+      });
+      await newMessage.save();
+
+      // 2. Update conversation last message
+      await Conversation.findByIdAndUpdate(conversationId, {
+        lastMessage: text,
+        lastMessageSender: senderId,
+        updatedAt: Date.now()
+      });
+
+      // 3. Emit to receiver room
+      io.to(receiverId).emit("receiveMessage", newMessage);
+
+      // Also emit back to sender to confirm (or for multi-device sync)
+      io.to(senderId).emit("receiveMessage", newMessage);
+
+      console.log(`✅ Message sent from ${senderId} to ${receiverId}`);
+    } catch (error) {
+      console.error("❌ Socket sendMessage error:", error);
+    }
   });
 
   socket.on("disconnect", () => {

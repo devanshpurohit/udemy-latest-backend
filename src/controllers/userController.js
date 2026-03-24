@@ -15,7 +15,7 @@ const generateToken = (id) => {
 // @access  Private
 const getProfile = async (req, res) => {
   try {
-    const user = await User.findById(req.user.id).select('-password');
+    const user = await User.findById(req.user.id).select('-password').lean();
     
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
@@ -64,6 +64,23 @@ const updateProfile = async (req, res) => {
       user.profile.profileImage = profile.profileImage;
     }
 
+    // ⭐ billing information update
+    if (req.body.billing) {
+      if (!user.billing) {
+        user.billing = {};
+      }
+      
+      const { fullName, email: billingEmail, country, address, city, state, zipCode } = req.body.billing;
+      
+      if (fullName !== undefined) user.billing.fullName = fullName;
+      if (billingEmail !== undefined) user.billing.email = billingEmail;
+      if (country !== undefined) user.billing.country = country;
+      if (address !== undefined) user.billing.address = address;
+      if (city !== undefined) user.billing.city = city;
+      if (state !== undefined) user.billing.state = state;
+      if (zipCode !== undefined) user.billing.zipCode = zipCode;
+    }
+
     const updatedUser = await user.save();
 
     res.json(updatedUser);
@@ -99,13 +116,43 @@ const getDashboard = async (req, res) => {
       profileImage: user.profile?.profileImage
     });
 
-    const userWithEnrolledCourses = await User.findById(user._id).populate({
-      path: 'enrolledCourses',
-      populate: {
-        path: 'instructor',
-        select: 'name'
-      }
-    }).populate('wishlist').populate('cart');
+    // Optimization: Only select necessary fields for dashboard courses to avoid massive response size (20MB issue)
+    // Only select essential fields to avoid response bloat (15MB issue)
+    const courseSelectFields = 'title thumbnail price discountedPrice instructor duration level category totalLessons totalSections sections';
+    
+    const userWithEnrolledCourses = await User.findById(user._id)
+      .populate({
+        path: 'enrolledCourses',
+        select: courseSelectFields,
+        populate: [
+          {
+            path: 'instructor',
+            select: 'username profile.profileImage'
+          },
+          {
+            path: 'sections.lessons',
+            select: '_id' // Only fetch IDs to keep it light
+          }
+        ]
+      })
+      .populate({
+        path: 'wishlist',
+        select: 'title thumbnail price discountedPrice instructor',
+        populate: {
+          path: 'instructor',
+          select: 'username'
+        }
+      })
+      .populate({
+        path: 'cart',
+        select: 'title thumbnail price discountedPrice instructor',
+        populate: {
+          path: 'instructor',
+          select: 'username'
+        }
+      })
+      .select('username email role profile progress enrolledCourses purchasedCourses wishlist cart')
+      .lean();
 
     if (!userWithEnrolledCourses) {
       return res.status(404).json({
@@ -123,6 +170,11 @@ const getDashboard = async (req, res) => {
       cartCount: userWithEnrolledCourses.cart?.length || 0
     });
 
+    // Fetch Student data to merge progress for old courses
+    const Student = require('../models/Student');
+    const studentData = await Student.findOne({ user: req.user.id }).lean();
+    const studentEnrolled = studentData?.enrolledCourses || [];
+
     res.json({
       success: true,
       data: {
@@ -138,19 +190,101 @@ const getDashboard = async (req, res) => {
               : "/boy.png"
           }
         },
-        enrolledCourses: userWithEnrolledCourses.enrolledCourses || [],
+        enrolledCourses: (userWithEnrolledCourses.enrolledCourses || []).map(course => {
+          const courseObj = { ...course };
+          
+          // Find progress from User model
+          const userProgressEntry = (userWithEnrolledCourses.progress || []).find(
+            p => p.courseId.toString() === course._id.toString()
+          );
+
+          // Find progress from Student model (backup for old courses)
+          const studentProgressEntry = studentEnrolled.find(
+            e => (e.course || e.courseId)?.toString() === course._id.toString()
+          );
+
+          // Robustly calculate total lessons
+          let totalLessonsCount = course.totalLessons || 0;
+          if (totalLessonsCount === 0 || !course.totalLessons) {
+            if (course.sections && course.sections.length > 0) {
+              totalLessonsCount = course.sections.reduce((total, section) => 
+                total + (section.lessons ? section.lessons.length : 0), 0);
+            } else if (course.lessons && course.lessons.length > 0) {
+              totalLessonsCount = course.lessons.length;
+            }
+          }
+
+          // Merge completed lessons from both models
+          const userCompleted = (userProgressEntry?.completedLessons || []).map(l => 
+            (l.lessonId || l._id || l.lesson)?.toString()
+          );
+          const studentCompleted = (studentProgressEntry?.completedLessons || []).map(l => 
+            (l.lesson || l._id || l.lessonId)?.toString()
+          );
+          
+          const uniqueCompleted = new Set([...userCompleted.filter(Boolean), ...studentCompleted.filter(Boolean)]);
+          const completedLessonsCount = uniqueCompleted.size;
+          
+          const progressPercentage = totalLessonsCount > 0 
+            ? Math.round((completedLessonsCount / totalLessonsCount) * 100) 
+            : 0;
+
+          // Merge quiz scores
+          const userQuizzes = (userProgressEntry?.quizScores || []).map(q => q.lessonId.toString());
+          const studentQuizzes = (studentProgressEntry?.quizScores || []).map(q => (q.lesson || q.lessonId)?.toString());
+          const uniqueQuizzes = new Set([...userQuizzes.filter(Boolean), ...studentQuizzes.filter(Boolean)]);
+
+          // DELETE huge fields to keep response small (15MB fix)
+          delete courseObj.sections;
+          delete courseObj.lessons;
+
+          return {
+            ...courseObj,
+            progressPercentage,
+            completedLessonsCount,
+            totalLessonsCount,
+            quizCount: uniqueQuizzes.size,
+            isPurchased: true
+          };
+        }),
         wishlist: userWithEnrolledCourses.wishlist || [],
         cart: userWithEnrolledCourses.cart || [],
-        stats: {
-          totalEnrolled: userWithEnrolledCourses.enrolledCourses?.length || 0,
-          totalActive: userWithEnrolledCourses.enrolledCourses?.filter(c => c.status === 'active')?.length || 0,
-          totalCompleted: userWithEnrolledCourses.enrolledCourses?.filter(c => c.status === 'completed')?.length || 0,
-          totalQuizzes: (userWithEnrolledCourses.progress || []).reduce((acc, curr) => {
-            // Count unique lessons that have at least one quiz attempt
-            const uniqueQuizzes = new Set((curr.quizScores || []).map(q => q.lessonId.toString()));
-            return acc + uniqueQuizzes.size;
-          }, 0)
-        }
+        stats: (() => {
+          // Map courses to their merged progress again to calculate stats
+          const mergedCourses = (userWithEnrolledCourses.enrolledCourses || []).map(course => {
+            const courseIdStr = course._id.toString();
+            const userProg = (userWithEnrolledCourses.progress || []).find(p => p.courseId.toString() === courseIdStr);
+            const studentCourse = studentEnrolled.find(e => (e.course || e.courseId)?.toString() === courseIdStr);
+            
+            const userCompleted = (userProg?.completedLessons || []).map(l => (l.lessonId || l._id || l.lesson)?.toString());
+            const studentCompleted = (studentCourse?.completedLessons || []).map(l => (l.lesson || l._id || l.lessonId)?.toString());
+            const combinedCompleted = new Set([...userCompleted.filter(Boolean), ...studentCompleted.filter(Boolean)]);
+            const completedCount = combinedCompleted.size;
+            
+            let totalLessons = course.totalLessons || 0;
+            if (totalLessons === 0) {
+                if (course.sections && course.sections.length > 0) {
+                    totalLessons = course.sections.reduce((t, s) => t + (s.lessons ? s.lessons.length : 0), 0);
+                } else if (course.lessons && course.lessons.length > 0) {
+                    totalLessons = course.lessons.length;
+                }
+            }
+
+            // Also aggregate quizzes for stats
+            const userQuizzes = (userProg?.quizScores || []).map(q => q.lessonId.toString());
+            const studentQuizzes = (studentCourse?.quizScores || []).map(q => (q.lesson || q.lessonId)?.toString());
+            const uniqueQuizzes = new Set([...userQuizzes.filter(Boolean), ...studentQuizzes.filter(Boolean)]);
+
+            return { completedCount, totalLessons, quizCount: uniqueQuizzes.size };
+          });
+
+          return {
+            totalEnrolled: mergedCourses.length,
+            totalActive: mergedCourses.filter(c => c.completedCount > 0 && c.completedCount < c.totalLessons).length,
+            totalCompleted: mergedCourses.filter(c => c.totalLessons > 0 && c.completedCount >= c.totalLessons).length,
+            totalQuizzes: mergedCourses.reduce((acc, c) => acc + c.quizCount, 0)
+          };
+        })()
       }
     });
   } catch (error) {
@@ -172,7 +306,7 @@ const checkCourseAccess = async (req, res) => {
     const userId = req.user.id;
 
     // Check if user has purchased this course
-    const user = await User.findById(userId);
+    const user = await User.findById(userId).lean();
     if (!user) {
       return res.status(404).json({ 
         success: false, 

@@ -188,11 +188,23 @@ const courseSchema = new mongoose.Schema({
     min: 0,
     max: 5
   },
+  numReviews: {
+    type: Number,
+    default: 0
+  },
   totalEnrollments: {
     type: Number,
     default: 0
   },
   totalRevenue: {
+    type: Number,
+    default: 0
+  },
+  totalLessons: {
+    type: Number,
+    default: 0
+  },
+  totalSections: {
     type: Number,
     default: 0
   },
@@ -308,16 +320,21 @@ courseSchema.virtual('students').get(function() {
 // Pre-save middleware to calculate total duration
 courseSchema.pre('save', function(next) {
   let totalDuration = 0;
+  let totalLessons = 0;
   
   if (this.sections && Array.isArray(this.sections)) {
+    this.totalSections = this.sections.length;
     this.sections.forEach(section => {
       if (section.lessons && Array.isArray(section.lessons)) {
+        totalLessons += section.lessons.length;
         section.lessons.forEach(lesson => {
           totalDuration += (lesson.duration || 0);
         });
       }
     });
   }
+
+  this.totalLessons = totalLessons;
   
   // Update duration field if not set or zero
   if (!this.duration || this.duration === 0) {

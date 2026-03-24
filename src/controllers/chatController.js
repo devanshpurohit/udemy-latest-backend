@@ -494,7 +494,7 @@ const getAllUsers = async (req, res) => {
     // Get all users from database (assuming you have a User model)
     const User = require('../models/User'); // Adjust path as needed
     
-    const users = await User.find({}).select('id name email role createdAt').lean();
+    const users = await User.find({}).select('_id username email role profile createdAt').lean();
     
     console.log('👥 Found users:', users.length);
     
