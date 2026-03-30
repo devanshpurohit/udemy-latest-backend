@@ -32,8 +32,10 @@ router.get('/courses', async (req, res) => {
     
     if (search) {
       filter.$or = [
-        { title: { $regex: search, $options: 'i' } },
-        { description: { $regex: search, $options: 'i' } },
+        { 'title.en': { $regex: search, $options: 'i' } },
+        { 'title.kn': { $regex: search, $options: 'i' } },
+        { 'description.en': { $regex: search, $options: 'i' } },
+        { 'description.kn': { $regex: search, $options: 'i' } },
         { tags: { $in: [new RegExp(search, 'i')] } }
       ];
     }
@@ -90,23 +92,45 @@ router.get('/courses', async (req, res) => {
     }
     const studentEnrolled = studentData?.enrolledCourses || [];
 
+    // Fetch user language for filtering if authenticated
+    let userLang = 'English';
+    if (authenticatedUserId) {
+        const userWithLang = await User.findById(authenticatedUserId).select('profile.language').lean();
+        userLang = userWithLang?.profile?.language || 'English';
+    }
+
     // Add isPurchased and progress fields to each course
     const coursesWithStatus = courses.map(course => {
       const courseObj = course.toObject();
+      
+      // language-based content filtering for students
+      const langCode = userLang === 'Kannada' ? 'kn' : 'en';
+      if (courseObj.title && typeof courseObj.title === 'object') {
+        courseObj.title = courseObj.title[langCode] || courseObj.title.en;
+      }
+      if (courseObj.description && typeof courseObj.description === 'object') {
+        courseObj.description = courseObj.description[langCode] || courseObj.description.en;
+      }
+
+      if (langCode === 'kn') {
+          if (courseObj.sections_kn && courseObj.sections_kn.length > 0) {
+              courseObj.sections = courseObj.sections_kn;
+          }
+          if (courseObj.previewVideo_kn) {
+              courseObj.previewVideo = courseObj.previewVideo_kn;
+          }
+      }
       const isEnrolled = userPurchasedCourses.includes(course._id.toString());
       courseObj.isPurchased = isEnrolled;
 
-      // Robustly calculate total lessons in the course (from sections or lessons array)
+      // Robustly calculate total lessons
       let totalLessonsCount = course.totalLessons || 0;
       if (totalLessonsCount === 0) {
-        if (course.sections && Array.isArray(course.sections) && course.sections.length > 0) {
-          course.sections.forEach(section => {
-            if (section.lessons && Array.isArray(section.lessons)) {
-              totalLessonsCount += section.lessons.length;
-            }
-          });
-        } else if (course.lessons && Array.isArray(course.lessons)) {
+        // Fallback: If sections are not populated, we might still have a lessons array if it's a simple course
+        if (course.lessons && Array.isArray(course.lessons) && course.lessons.length > 0) {
           totalLessonsCount = course.lessons.length;
+        } else if (course.sections && Array.isArray(course.sections) && course.sections.length > 0) {
+          totalLessonsCount = course.sections.reduce((t, s) => t + (s.lessons?.length || 0), 0);
         }
       }
 
@@ -194,6 +218,7 @@ router.get('/courses/:id', async (req, res) => {
     let completedLessons = [];
     let completedLessonsCount = 0;
     let progressPercentage = 0;
+    let userLang = 'English';
 
     const authHeader = req.headers.authorization;
     if (authHeader && authHeader.startsWith('Bearer ')) {
@@ -204,11 +229,12 @@ router.get('/courses/:id', async (req, res) => {
         
         // Fetch User and Student data for progress merging
         const [user, StudentData] = await Promise.all([
-          User.findById(decoded.id).select('enrolledCourses purchasedCourses progress').lean(),
+          User.findById(decoded.id).select('enrolledCourses purchasedCourses progress profile.language').lean(),
           require('../models/Student').findOne({ user: decoded.id }).lean()
         ]);
 
         if (user) {
+          userLang = user.profile?.language || 'English';
           const enrolled = (user.enrolledCourses || []).map(id => id.toString());
           const purchased = (user.purchasedCourses || []).map(id => id.toString());
           isPurchased = enrolled.includes(courseId.toString()) || purchased.includes(courseId.toString());
@@ -254,6 +280,26 @@ router.get('/courses/:id', async (req, res) => {
     courseObj.completedLessonsCount = completedLessonsCount;
     courseObj.totalLessonsCount = totalLessonsCount;
     courseObj.completedLessons = completedLessons;
+
+    const langCode = userLang === 'Kannada' ? 'kn' : 'en';
+
+    // Swap title and description
+    if (courseObj.title && typeof courseObj.title === 'object') {
+      courseObj.title = courseObj.title[langCode] || courseObj.title.en;
+    }
+    if (courseObj.description && typeof courseObj.description === 'object') {
+      courseObj.description = courseObj.description[langCode] || courseObj.description.en;
+    }
+
+    if (langCode === 'kn') {
+        console.log('🔄 Filtering public course content for Kannada user');
+        if (courseObj.sections_kn && courseObj.sections_kn.length > 0) {
+          courseObj.sections = courseObj.sections_kn;
+        }
+        if (courseObj.previewVideo_kn) {
+          courseObj.previewVideo = courseObj.previewVideo_kn;
+        }
+    }
 
     console.log('🔍 Public course fetched:', course.title, { isPurchased, progressPercentage });
     

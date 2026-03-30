@@ -32,13 +32,30 @@ const updateSettings = async (req, res) => {
     }
 
     // Update other fields
-    const { footerContent, siteName, contactEmail, contactPhone, address, facebook, twitter, instagram, linkedin } = req.body;
+    const { 
+      footerContent, 
+      siteName, 
+      contactEmail, 
+      contactPhone, 
+      address, 
+      facebook, 
+      twitter, 
+      instagram, 
+      linkedin,
+      bannerTitle,
+      bannerSubtitle,
+      bannerDescription
+    } = req.body;
     
     if (footerContent !== undefined) settings.footerContent = footerContent;
     if (siteName !== undefined) settings.siteName = siteName;
     if (contactEmail !== undefined) settings.contactEmail = contactEmail;
     if (contactPhone !== undefined) settings.contactPhone = contactPhone;
     if (address !== undefined) settings.address = address;
+
+    if (bannerTitle !== undefined) settings.bannerTitle = bannerTitle;
+    if (bannerSubtitle !== undefined) settings.bannerSubtitle = bannerSubtitle;
+    if (bannerDescription !== undefined) settings.bannerDescription = bannerDescription;
     
     if (settings.socialLinks) {
         if (facebook !== undefined) settings.socialLinks.facebook = facebook;

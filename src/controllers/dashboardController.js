@@ -15,7 +15,7 @@ const getUserDashboard = async (req, res) => {
     // 🚀 Concurrent fetching of user and certificates
     const [user, userCertificates] = await Promise.all([
    User.findById(userId)
-  .select("enrolledCourses purchasedCourses progress") // ✅ only required data
+  .select("enrolledCourses purchasedCourses progress profile") // ✅ only required data
   .populate({
     path: 'enrolledCourses',
     populate: {
@@ -75,24 +75,35 @@ const getUserDashboard = async (req, res) => {
         ? Math.round((completedLessonsCount / totalLessonsCount) * 100) 
         : 0;
 
-    return {
-      _id: courseObj._id,
-      title: courseObj.title,
-      description: courseObj.description,
-      price: courseObj.price,
-      discountedPrice: courseObj.discountedPrice,
-      originalPrice: courseObj.originalPrice,
-      thumbnail: courseObj.thumbnail,
-      image: courseObj.image,
-      courseImage: courseObj.courseImage,
-      averageRating: courseObj.averageRating,
-      numReviews: courseObj.numReviews,
-      instructor: courseObj.instructor,
-      progressPercentage,
-      completedLessonsCount,
-      totalLessonsCount,
-      isPurchased: true
-    };
+      // 🌐 Full Localization for Dashboard
+      const userLang = user?.profile?.language || 'English';
+      const langCode = userLang === 'Kannada' ? 'kn' : 'en';
+
+      if (courseObj.title && typeof courseObj.title === 'object') {
+          courseObj.title = courseObj.title[langCode] || courseObj.title.en || 'Untitled';
+      }
+      if (courseObj.description && typeof courseObj.description === 'object') {
+          courseObj.description = courseObj.description[langCode] || courseObj.description.en || '';
+      }
+
+      return {
+        _id: courseObj._id,
+        title: courseObj.title,
+        description: courseObj.description,
+        price: courseObj.price,
+        discountedPrice: courseObj.discountedPrice,
+        originalPrice: courseObj.originalPrice,
+        thumbnail: courseObj.thumbnail,
+        image: courseObj.image,
+        courseImage: courseObj.courseImage,
+        averageRating: courseObj.averageRating,
+        numReviews: courseObj.numReviews,
+        instructor: courseObj.instructor,
+        progressPercentage,
+        completedLessonsCount,
+        totalLessonsCount,
+        isPurchased: true
+      };
     });
 
     courses = enrolledCourses;
@@ -198,13 +209,24 @@ const getDashboardStats = async (req, res) => {
         getMonthlyRevenue()
       ]);
 
+      // 🌐 Localize search results for admin (default to English)
+      const localizedRecentCourses = recentCourses.map(course => {
+          if (course.title && typeof course.title === 'object') {
+              course.title = course.title.en || course.title.kn || 'Untitled';
+          }
+          if (course.description && typeof course.description === 'object') {
+              course.description = course.description.en || course.description.kn || '';
+          }
+          return course;
+      });
+
       stats = {
         totalCourses,
         publishedCourses,
         totalStudents,
         totalInstructors,
         totalRevenue: totalRevenue[0]?.total || 0,
-        recentCourses,
+        recentCourses: localizedRecentCourses,
         recentStudents,
         monthlyRevenue
       };
@@ -385,9 +407,17 @@ const getCoursePerformance = async (req, res) => {
       { $limit: 10 }
     ]);
 
+    // 🌐 Localize results
+    const localizedPerformance = coursePerformance.map(course => {
+        if (course.title && typeof course.title === 'object') {
+            course.title = course.title.en || course.title.kn || 'Untitled';
+        }
+        return course;
+    });
+
     res.status(200).json({
       success: true,
-      data: { coursePerformance }
+      data: { coursePerformance: localizedPerformance }
     });
   } catch (error) {
     console.error('Get course performance error:', error);

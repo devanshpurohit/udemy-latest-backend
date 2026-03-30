@@ -22,6 +22,18 @@ const SiteSettingsSchema = new mongoose.Schema({
     instagram: String,
     linkedin: String
   },
+  bannerTitle: {
+    type: String,
+    default: 'Learn AI the Smart Way'
+  },
+  bannerSubtitle: {
+    type: String,
+    default: 'Simple, practical AI concepts designed for school students.'
+  },
+  bannerDescription: {
+    type: String,
+    default: 'Explore the basics of AI through guided lessons and real examples.Learn how artificial intelligence is shaping the world around us.'
+  },
   updatedAt: {
     type: Date,
     default: Date.now

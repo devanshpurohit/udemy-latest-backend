@@ -3,44 +3,33 @@ const mongoose = require('mongoose');
 // Quiz Schema
 const quizSchema = new mongoose.Schema({
   question: {
-    type: String,
-    required: true
+    en: { type: String, trim: true },
+    kn: { type: String, trim: true }
   },
-  options: {
-    type: [String],
-    required: true,
-    validate: {
-      validator: function(options) {
-        return options.length >= 2 && options.length <= 6;
-      },
-      message: 'Quiz must have between 2 and 6 options'
-    }
-  },
+  options: [{
+    en: { type: String, trim: true },
+    kn: { type: String, trim: true }
+  }],
   correctAnswer: {
     type: Number,
     required: true,
-    min: 0,
-    validate: {
-      validator: function(answer) {
-        return answer < this.options.length;
-      },
-      message: 'Correct answer must be a valid option index'
-    }
+    min: 0
   }
 }, { _id: true });
 
 // Lesson Schema
 const lessonSchema = new mongoose.Schema({
   title: {
-    type: String,
-    required: true
+    en: { type: String, trim: true },
+    kn: { type: String, trim: true }
   },
   description: {
-    type: String
+    en: { type: String, trim: true },
+    kn: { type: String, trim: true }
   },
   videoUrl: {
-    type: String,
-    required: true
+    en: { type: String, trim: true },
+    kn: { type: String, trim: true }
   },
   duration: {
     type: Number, // in minutes
@@ -69,11 +58,12 @@ const lessonSchema = new mongoose.Schema({
 // Section Schema
 const sectionSchema = new mongoose.Schema({
   title: {
-    type: String,
-    required: true
+    en: { type: String, trim: true },
+    kn: { type: String, trim: true }
   },
   description: {
-    type: String
+    en: { type: String, trim: true },
+    kn: { type: String, trim: true }
   },
   lessons: [lessonSchema],
   order: {
@@ -84,15 +74,12 @@ const sectionSchema = new mongoose.Schema({
 
 const courseSchema = new mongoose.Schema({
   title: {
-    type: String,
-    required: [true, 'Course title is required'],
-    trim: true,
-    maxlength: [200, 'Title cannot exceed 200 characters']
+    en: { type: String, required: [true, 'English title is required'], trim: true },
+    kn: { type: String, trim: true }
   },
   description: {
-    type: String,
-    required: [true, 'Course description is required'],
-    maxlength: [5000, 'Description cannot exceed 5000 characters']
+    en: { type: String, required: [true, 'English description is required'] },
+    kn: { type: String }
   },
   instructor: {
     type: mongoose.Schema.Types.ObjectId,
@@ -118,7 +105,12 @@ const courseSchema = new mongoose.Schema({
     type: Number,
     min: [0, 'Discounted price cannot be negative']
   },
+  sections: [sectionSchema],
+  sections_kn: [sectionSchema],
   previewVideo: {
+    type: String
+  },
+  previewVideo_kn: {
     type: String
   },
   thumbnail: {
@@ -139,13 +131,14 @@ const courseSchema = new mongoose.Schema({
     min: [1, 'Duration must be at least 1 month'],
     max: [24, 'Duration cannot exceed 24 months']
   },
-  sections: [sectionSchema],
-  requirements: [{
-    type: String
-  }],
-  whatYouWillLearn: [{
-    type: String
-  }],
+  requirements: {
+    en: [{ type: String, trim: true }],
+    kn: [{ type: String, trim: true }]
+  },
+  whatYouWillLearn: {
+    en: [{ type: String, trim: true }],
+    kn: [{ type: String, trim: true }]
+  },
   tags: [{
     type: String,
     trim: true

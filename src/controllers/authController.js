@@ -19,35 +19,36 @@ const generateOTP = () => {
 // @access  Public
 const register = async (req, res) => {
   try {
-    const { username, email, password, firstName, lastName, phone, role, cardNumber, cvv } = req.body;
+    const { email, password, language, role, cardNumber, cvv } = req.body;
 
-    // 1. Verify Card Credentials again
-    const AICard = require('../models/AICard');
-    const card = await AICard.findOne({ cardNumber, cvv });
+    // 1. Optional Card Verification
+    let card = null;
+    if (cardNumber && cvv) {
+      const AICard = require('../models/AICard');
+      card = await AICard.findOne({ cardNumber, cvv });
 
-    if (!card) {
-      return res.status(404).json({
-        success: false,
-        message: 'Invalid Card Credentials'
-      });
-    }
+      if (!card) {
+        return res.status(404).json({
+          success: false,
+          message: 'Invalid Card Credentials'
+        });
+      }
 
-    if (card.status !== 'active') {
-      return res.status(400).json({
-        success: false,
-        message: `Card is already ${card.status}`
-      });
+      if (card.status !== 'active') {
+        return res.status(400).json({
+          success: false,
+          message: `Card is already ${card.status}`
+        });
+      }
     }
 
     // 2. Check if user exists
-    const existingUser = await User.findOne({
-      $or: [{ email }, { username }]
-    });
+    const existingUser = await User.findOne({ email });
 
     if (existingUser) {
       return res.status(400).json({
         success: false,
-        message: 'User with this email or username already exists'
+        message: 'User with this email already exists'
       });
     }
 
@@ -56,14 +57,13 @@ const register = async (req, res) => {
     const otpExpire = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
     // 4. Create user (Initially inactive and unverified)
+    // Use email as username since username is not included in signup
     const user = await User.create({
-      username,
+      username: email,
       email,
       password,
       profile: {
-        firstName: firstName || '',
-        lastName: lastName || '',
-        phone: phone || ''
+        language: language || 'English'
       },
       role: role || 'student',
       emailVerified: false,
@@ -72,10 +72,12 @@ const register = async (req, res) => {
       otpExpire
     });
 
-    // 5. Link card to user and mark as used
-    card.status = 'inuse';
-    card.usedBy = user._id;
-    await card.save();
+    // 5. Link card to user and mark as used (if card provided)
+    if (card) {
+      card.status = 'inuse';
+      card.usedBy = user._id;
+      await card.save();
+    }
 
     // 6. Create corresponding student record if role is student
     if (user.role === 'student') {
@@ -100,7 +102,6 @@ const register = async (req, res) => {
       console.log('OTP sent successfully to:', user.email);
     } catch (error) {
       console.error('Error sending OTP email:', error);
-      // We continue since user can try resending later
     }
 
     res.status(201).json({
@@ -109,14 +110,11 @@ const register = async (req, res) => {
       data: {
         email: user.email,
         emailVerificationRequired: true,
-        // For development purposes, returning OTP. Remove in production.
         ...(process.env.NODE_ENV !== 'production' && { testOtp: otp })
       }
     });
   } catch (error) {
     console.error('Registration error:', error);
-    
-    // Handle validation errors
     if (error.name === 'ValidationError') {
       const errors = Object.values(error.errors).map(err => err.message);
       return res.status(400).json({
@@ -124,7 +122,6 @@ const register = async (req, res) => {
         message: errors.join(', ')
       });
     }
-    
     res.status(500).json({
       success: false,
       message: 'Server error during registration'
@@ -199,7 +196,7 @@ const login = async (req, res) => {
     console.log("🔍 Incoming request body:", req.body);
     console.log("🔍 Request headers:", req.headers);
     
-    const { username, password } = req.body;
+    const { username, password, deviceId, deviceInfo } = req.body;
     
     console.log('🔍 Login attempt:', { username, passwordLength: password?.length });
 
@@ -209,16 +206,6 @@ const login = async (req, res) => {
     });
 
     console.log('🔍 User found:', user ? 'YES' : 'NO');
-    if (user) {
-      console.log('🔍 User details:', {
-        id: user._id,
-        username: user.username,
-        email: user.email,
-        isActive: user.isActive,
-        emailVerified: user.emailVerified
-      });
-    }
-
     if (!user) {
       return res.status(401).json({
         success: false,
@@ -245,14 +232,52 @@ const login = async (req, res) => {
     console.log('🔍 Checking password...');
     const isPasswordValid = await user.comparePassword(password);
     
-    console.log('🔍 Password valid:', isPasswordValid);
-
     if (!isPasswordValid) {
       console.log('❌ Password comparison failed');
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials'
       });
+    }
+
+    // ⭐ Device Login Restriction Mechanism
+    if (deviceId && user.role !== 'admin') {
+      if (user.currentDeviceId && user.currentDeviceId !== deviceId) {
+        const DeviceLoginRequest = require('../models/DeviceLoginRequest');
+        
+        // Is this device approved?
+        const approvedRequest = await DeviceLoginRequest.findOne({ 
+          user: user._id, 
+          deviceId: deviceId, 
+          status: 'approved' 
+        });
+
+        if (!approvedRequest) {
+          // If not approved, create or update pending request
+          let existingRequest = await DeviceLoginRequest.findOne({ user: user._id, deviceId: deviceId });
+          
+          if (!existingRequest || existingRequest.status === 'rejected') {
+            await DeviceLoginRequest.findOneAndUpdate(
+              { user: user._id, deviceId: deviceId },
+              { deviceInfo: deviceInfo || 'Unknown Device', status: 'pending' },
+              { upsert: true, new: true }
+            );
+            return res.status(403).json({
+              success: false,
+              message: 'You have already logged in on one device. Request sent to Admin for approval.'
+            });
+          } else if (existingRequest.status === 'pending') {
+             return res.status(403).json({
+               success: false,
+               message: 'Your login request for this new device is pending Admin approval.'
+             });
+          }
+        }
+      }
+      
+      // If we reach here, either currentDeviceId is empty (first login), it matches deviceId (same device),
+      // OR an admin approved the new device request. Assign this device as the current one.
+      user.currentDeviceId = deviceId;
     }
 
     // Update last login - skip pre-save middleware to avoid password hashing

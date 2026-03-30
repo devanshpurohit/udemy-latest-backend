@@ -20,6 +20,10 @@ const reviewSchema = new mongoose.Schema(
     },
     comment: {
         type: String
+    },
+    isApproved: {
+        type: Boolean,
+        default: true
     }
 },
 { timestamps: true }

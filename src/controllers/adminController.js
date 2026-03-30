@@ -186,31 +186,36 @@ const getSystemStats = async (req, res) => {
 // @access  Private (Admin)
 const updateUserProfile = async (req, res) => {
   try {
-    const { firstName, lastName, phone, bio, profileImage } = req.body;
+    const { firstName, lastName, phone, bio, profileImage, language } = req.body;
 
-    const updatedUser = await User.findByIdAndUpdate(
-      req.params.id,
-      {
-        $set: {
-          "profile.firstName": firstName,
-          "profile.lastName": lastName,
-          "profile.phone": phone,
-          "profile.bio": bio,
-          "profile.profileImage": profileImage
-        }
-      },
-      {
-        new: true,
-        runValidators: true
-      }
-    ).select("-password");
+    const user = await User.findById(req.params.id);
 
-    if (!updatedUser) {
+    if (!user) {
       return res.status(404).json({
         success: false,
         message: "User not found"
       });
     }
+
+    // ⭐ Track Language Changes
+    if (language !== undefined && language !== user.profile.language) {
+      if (!user.languageHistory) user.languageHistory = [];
+      user.languageHistory.push({
+        language: language,
+        changedAt: new Date(),
+        changedBy: 'admin' // tracking that ADMIN changed it
+      });
+      user.profile.language = language;
+    }
+
+    // Update other fields
+    if (firstName !== undefined) user.profile.firstName = firstName;
+    if (lastName !== undefined) user.profile.lastName = lastName;
+    if (phone !== undefined) user.profile.phone = phone;
+    if (bio !== undefined) user.profile.bio = bio;
+    if (profileImage !== undefined) user.profile.profileImage = profileImage;
+
+    const updatedUser = await user.save();
 
     console.log("Admin - Profile updated:", updatedUser.profile);
 
@@ -231,10 +236,66 @@ const updateUserProfile = async (req, res) => {
 };
 
 
+// @desc    Get all device login requests
+// @route   GET /api/admin/device-requests
+// @access  Private (Admin)
+const getDeviceLoginRequests = async (req, res) => {
+  try {
+    const DeviceLoginRequest = require('../models/DeviceLoginRequest');
+    const requests = await DeviceLoginRequest.find()
+      .populate('user', 'username email profile.firstName profile.lastName profile.profileImage')
+      .sort({ createdAt: -1 });
+
+    res.status(200).json({
+      success: true,
+      data: { requests }
+    });
+  } catch (error) {
+    console.error('Get device login requests error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while fetching device requests'
+    });
+  }
+};
+
+// @desc    Update device login request status
+// @route   PUT /api/admin/device-requests/:id
+// @access  Private (Admin)
+const updateDeviceLoginRequest = async (req, res) => {
+  try {
+    const { status } = req.body; // 'approved' or 'rejected'
+    const DeviceLoginRequest = require('../models/DeviceLoginRequest');
+    
+    const request = await DeviceLoginRequest.findById(req.params.id);
+    
+    if (!request) {
+      return res.status(404).json({ success: false, message: 'Request not found' });
+    }
+
+    request.status = status;
+    await request.save();
+
+    res.status(200).json({
+      success: true,
+      message: `Device login request ${status} successfully`
+    });
+  } catch (error) {
+    console.error('Update device request error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while updating device request'
+    });
+  }
+};
+
+
 module.exports = {
   getAllUsers,
   getUserById,
   updateUserStatus,
   updateUserProfile,
-  getSystemStats
+  getSystemStats,
+  getDeviceLoginRequests,
+  updateDeviceLoginRequest
 };

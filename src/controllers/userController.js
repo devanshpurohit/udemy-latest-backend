@@ -53,7 +53,17 @@ const updateProfile = async (req, res) => {
     // but since they aren't in the schema, we should ideally add them or put them in profile.
     // Given the schema doesn't have them, let's put them in profile for better organization.
     if (countryCode) user.profile.countryCode = countryCode;
-    if (language) user.profile.language = language;
+    
+    // ⭐ Language update with history tracking
+    if (language && user.profile.language !== language) {
+      if (!user.languageHistory) user.languageHistory = [];
+      user.languageHistory.push({
+        language: language,
+        changedAt: new Date(),
+        changedBy: 'user' // Changed by user
+      });
+      user.profile.language = language;
+    }
 
     // ⭐ profile image update
     if (profile?.profileImage) {

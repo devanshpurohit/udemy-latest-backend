@@ -28,6 +28,8 @@ const notificationRoutes = require('./routes/notifications');
 const questionRoutes = require('./routes/questionRoutes');
 const conversationRoutes = require('./routes/conversations');
 const feedbackRoutes = require('./routes/feedbackRoutes');
+const legalRoutes = require('./routes/legalContent');
+const complaintRoutes = require('./routes/complaintRoutes');
 
 
 
@@ -119,6 +121,8 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/questions', questionRoutes);
 app.use('/api/conversations', conversationRoutes);
 app.use('/api/feedback', feedbackRoutes);
+app.use('/api/legal', legalRoutes);
+app.use('/api/complaints', complaintRoutes);
 
 /* =======================
    STATIC FILES

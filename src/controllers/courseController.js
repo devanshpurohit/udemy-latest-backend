@@ -1,5 +1,39 @@
 const Course = require('../models/Course');
-const { deleteFile } = require('../middleware/upload');
+const cloudinary = require('../config/cloudinary');
+const { deleteFile, saveBase64ToDisk } = require('../middleware/upload');
+
+// Helper to save all media files from course data
+const saveMediaFiles = (data) => {
+    if (!data) return data;
+    
+    // Top-level fields
+    if (data.courseImage) data.courseImage = saveBase64ToDisk(data.courseImage, 'thumbnails');
+    if (data.thumbnail) data.thumbnail = saveBase64ToDisk(data.thumbnail, 'thumbnails');
+    if (data.previewVideo) data.previewVideo = saveBase64ToDisk(data.previewVideo, 'videos');
+    if (data.previewVideo_kn) data.previewVideo_kn = saveBase64ToDisk(data.previewVideo_kn, 'videos');
+    
+    // Sections and Lessons
+    const processLessons = (lessons) => {
+        if (!lessons || !Array.isArray(lessons)) return;
+        lessons.forEach(lesson => {
+            if (lesson.videoUrl) {
+                if (typeof lesson.videoUrl === 'object') {
+                    if (lesson.videoUrl.en) lesson.videoUrl.en = saveBase64ToDisk(lesson.videoUrl.en, 'videos');
+                    if (lesson.videoUrl.kn) lesson.videoUrl.kn = saveBase64ToDisk(lesson.videoUrl.kn, 'videos');
+                } else if (typeof lesson.videoUrl === 'string') {
+                    lesson.videoUrl = saveBase64ToDisk(lesson.videoUrl, 'videos');
+                }
+            }
+        });
+    };
+
+    if (data.sections) data.sections.forEach(s => processLessons(s.lessons));
+    if (data.sections_kn) data.sections_kn.forEach(s => processLessons(s.lessons));
+    if (data.lessons) processLessons(data.lessons);
+    if (data.lessons_kn) processLessons(data.lessons_kn);
+    
+    return data;
+};
 
 // @desc    Create or update course draft (wizard)
 // @route   POST /api/courses/wizard/draft
@@ -14,6 +48,42 @@ const saveCourseDraft = async (req, res) => {
       price: parseFloat(req.body.price) || 0,
       duration: parseInt(req.body.duration) || 1
     };
+
+    // 🚀 Save any embedded base64 media files to disk
+    saveMediaFiles(courseData);
+
+    // 🌐 Map multilingual fields (handle both flat and nested inputs)
+    if (!courseData.title || typeof courseData.title !== 'object') {
+        courseData.title = {
+            en: req.body.title_en || req.body.title || '',
+            kn: req.body.title_kn || ''
+        };
+    }
+    if (!courseData.description || typeof courseData.description !== 'object') {
+        courseData.description = {
+            en: req.body.description_en || req.body.description || '',
+            kn: req.body.description_kn || ''
+        };
+    }
+
+    // Map lessons to sections if they exist in req.body
+    if (req.body.lessons) {
+      courseData.sections = [{
+        title: { en: 'Course Content', kn: '' },
+        description: { en: '', kn: '' },
+        lessons: req.body.lessons,
+        order: 1
+      }];
+    }
+    
+    if (req.body.lessons_kn) {
+      courseData.sections_kn = [{
+        title: { en: 'Course Content', kn: '' },
+        description: { en: '', kn: '' },
+        lessons: req.body.lessons_kn,
+        order: 1
+      }];
+    }
 
     let course;
     if (req.body.courseId) {
@@ -66,6 +136,42 @@ const updateCourseDraft = async (req, res) => {
       price: parseFloat(req.body.price) || 0,
       duration: parseInt(req.body.duration) || 1
     };
+
+    // 🚀 Save any embedded base64 media files to disk
+    saveMediaFiles(courseData);
+
+    // 🌐 Map multilingual fields (handle both flat and nested inputs)
+    if (!courseData.title || typeof courseData.title !== 'object') {
+        courseData.title = {
+            en: req.body.title_en || req.body.title || '',
+            kn: req.body.title_kn || ''
+        };
+    }
+    if (!courseData.description || typeof courseData.description !== 'object') {
+        courseData.description = {
+            en: req.body.description_en || req.body.description || '',
+            kn: req.body.description_kn || ''
+        };
+    }
+
+    // Map lessons to sections if they exist in req.body
+    if (req.body.lessons) {
+      courseData.sections = [{
+        title: { en: 'Course Content', kn: '' },
+        description: { en: '', kn: '' },
+        lessons: req.body.lessons,
+        order: 1
+      }];
+    }
+    
+    if (req.body.lessons_kn) {
+      courseData.sections_kn = [{
+        title: { en: 'Course Content', kn: '' },
+        description: { en: '', kn: '' },
+        lessons: req.body.lessons_kn,
+        order: 1
+      }];
+    }
 
     const course = await Course.findByIdAndUpdate(
       id,
@@ -147,6 +253,66 @@ const saveCourseContent = async (req, res) => {
     
     // Support both old lessons and new sections structure
     const updateData = sections ? { sections } : { lessons };
+
+    // Helper to sanitize multilingual fields for old records
+    const sanitizeMultilingual = (field) => {
+        if (!field) return { en: '', kn: '' };
+        if (typeof field === 'string') return { en: field, kn: '' };
+        return {
+            en: field.en || '',
+            kn: field.kn || ''
+        };
+    };
+
+    if (updateData.sections) {
+        updateData.sections = updateData.sections.map(section => {
+            const sec = { ...section };
+            sec.title = sanitizeMultilingual(sec.title);
+            sec.description = sanitizeMultilingual(sec.description);
+            if (sec.lessons) {
+                sec.lessons = sec.lessons.map(lesson => {
+                    const les = { ...lesson };
+                    les.title = sanitizeMultilingual(les.title);
+                    les.description = sanitizeMultilingual(les.description);
+                    if (les.quizzes) {
+                        les.quizzes = les.quizzes.map(quiz => {
+                            const q = { ...quiz };
+                            q.question = sanitizeMultilingual(q.question);
+                            if (q.options) {
+                                q.options = q.options.map(opt => sanitizeMultilingual(opt));
+                            }
+                            return q;
+                        });
+                    }
+                    return les;
+                });
+            }
+            return sec;
+        });
+    }
+
+    if (updateData.lessons) {
+        updateData.lessons = updateData.lessons.map(lesson => {
+            const les = { ...lesson };
+            les.title = sanitizeMultilingual(les.title);
+            les.description = sanitizeMultilingual(les.description);
+            if (les.quizzes) {
+                les.quizzes = les.quizzes.map(quiz => {
+                    const q = { ...quiz };
+                    q.question = sanitizeMultilingual(q.question);
+                    if (q.options) {
+                        q.options = q.options.map(opt => sanitizeMultilingual(opt));
+                    }
+                    return q;
+                });
+            }
+            return les;
+        });
+    }
+
+    // 🚀 Save any embedded base64 media files to disk
+    saveMediaFiles(updateData);
+
     
     const course = await Course.findByIdAndUpdate(
       req.params.id,
@@ -225,6 +391,9 @@ const saveCourseMedia = async (req, res) => {
       previewVideo: req.body.previewVideo || '',
       resources: req.body.resources || []
     };
+
+    // 🚀 Save any embedded base64 media files to disk
+    saveMediaFiles(mediaData);
     
     const course = await Course.findByIdAndUpdate(
       req.params.id,
@@ -304,10 +473,10 @@ const validateCourse = async (req, res) => {
     const validationErrors = [];
 
     // Check required fields
-    if (!course.title || course.title.trim() === '') {
+    if (!course.title || !course.title.en || course.title.en.trim() === '') {
       validationErrors.push('Course title is required');
     }
-    if (!course.description || course.description.trim() === '') {
+    if (!course.description || !course.description.en || course.description.en.trim() === '') {
       validationErrors.push('Course description is required');
     }
     if (!course.category) {
@@ -357,6 +526,23 @@ const createCourse = async (req, res) => {
       isPublished: req.body.status === 'published'
     };
 
+    // 🚀 Save any embedded base64 media files to disk
+    saveMediaFiles(courseData);
+
+    // 🌐 Map multilingual fields (handle both flat and nested inputs)
+    if (!courseData.title || typeof courseData.title !== 'object') {
+        courseData.title = {
+            en: req.body.title_en || req.body.title || '',
+            kn: req.body.title_kn || ''
+        };
+    }
+    if (!courseData.description || typeof courseData.description !== 'object') {
+        courseData.description = {
+            en: req.body.description_en || req.body.description || '',
+            kn: req.body.description_kn || ''
+        };
+    }
+
     const course = await Course.create(courseData);
 
     await course.populate('instructor', 'username profile.firstName profile.lastName');
@@ -401,8 +587,10 @@ const getCourses = async (req, res) => {
     
     if (search) {
       filter.$or = [
-        { title: { $regex: search, $options: 'i' } },
-        { description: { $regex: search, $options: 'i' } },
+        { 'title.en': { $regex: search, $options: 'i' } },
+        { 'title.kn': { $regex: search, $options: 'i' } },
+        { 'description.en': { $regex: search, $options: 'i' } },
+        { 'description.kn': { $regex: search, $options: 'i' } },
         { tags: { $in: [new RegExp(search, 'i')] } }
       ];
     }
@@ -443,10 +631,42 @@ const getCourses = async (req, res) => {
       Course.countDocuments(filter)
     ]);
 
+    // Apply language-based metadata swapping for list view
+    if (req.user && req.user.role === 'student' && courses.length > 0) {
+        const userLang = req.user.profile?.language || 'English';
+        const langCode = userLang === 'Kannada' ? 'kn' : 'en';
+        
+        courses.forEach(course => {
+            // Swap title and description
+            if (course.title && typeof course.title === 'object') {
+              course.title = course.title[langCode] || course.title.en;
+            }
+            if (course.description && typeof course.description === 'object') {
+              course.description = course.description[langCode] || course.description.en;
+            }
+            // Swap preview video for Kannada
+            if (langCode === 'kn' && course.previewVideo_kn) {
+              course.previewVideo = course.previewVideo_kn;
+            }
+        });
+    }
+
+    // Localize for Admin (default to English)
+    const localizedCourses = courses.map(course => {
+        const courseObj = course; // .lean() already returns a plain JS object
+        if (courseObj.title && typeof courseObj.title === 'object') {
+            courseObj.title = courseObj.title.en || courseObj.title.kn || 'Untitled';
+        }
+        if (courseObj.description && typeof courseObj.description === 'object') {
+            courseObj.description = courseObj.description.en || courseObj.description.kn || '';
+        }
+        return courseObj;
+    });
+
     res.status(200).json({
       success: true,
       data: {
-        courses,
+        courses: localizedCourses,
         pagination: {
           page: parseInt(page),
           limit: parseInt(limit),
@@ -489,6 +709,39 @@ const getCourse = async (req, res) => {
         success: false,
         message: 'Access denied to this course'
       });
+    }
+
+    // Filter content based on user language for students
+    if (course) {
+      if (req.user && req.user.role === 'student') {
+        const userLang = req.user.profile?.language || 'English';
+        const langCode = userLang === 'Kannada' ? 'kn' : 'en';
+
+        // Swap title and description
+        if (course.title && typeof course.title === 'object') {
+          course.title = course.title[langCode] || course.title.en;
+        }
+        if (course.description && typeof course.description === 'object') {
+          course.description = course.description[langCode] || course.description.en;
+        }
+
+        if (langCode === 'kn') {
+          if (course.sections_kn && course.sections_kn.length > 0) {
+            course.sections = course.sections_kn;
+          }
+          if (course.previewVideo_kn) {
+            course.previewVideo = course.previewVideo_kn;
+          }
+        }
+      } else {
+          // For Admin/Instructor, default to English strings for display
+          if (course.title && typeof course.title === 'object') {
+            course.title = course.title.en || course.title.kn || 'Untitled';
+          }
+          if (course.description && typeof course.description === 'object') {
+            course.description = course.description.en || course.description.kn || '';
+          }
+      }
     }
 
     res.status(200).json({
@@ -591,7 +844,12 @@ const deleteCourse = async (req, res) => {
         if (section.lessons && section.lessons.length > 0) {
           section.lessons.forEach(lesson => {
             if (lesson.videoUrl) {
-              deleteFile(lesson.videoUrl);
+              if (typeof lesson.videoUrl === 'object') {
+                if (lesson.videoUrl.en) deleteFile(lesson.videoUrl.en);
+                if (lesson.videoUrl.kn) deleteFile(lesson.videoUrl.kn);
+              } else {
+                deleteFile(lesson.videoUrl);
+              }
             }
           });
         }
@@ -600,7 +858,12 @@ const deleteCourse = async (req, res) => {
       // Handle old lessons structure for backward compatibility
       course.lessons.forEach(lesson => {
         if (lesson.videoUrl) {
-          deleteFile(lesson.videoUrl);
+          if (typeof lesson.videoUrl === 'object') {
+            if (lesson.videoUrl.en) deleteFile(lesson.videoUrl.en);
+            if (lesson.videoUrl.kn) deleteFile(lesson.videoUrl.kn);
+          } else {
+            deleteFile(lesson.videoUrl);
+          }
         }
       });
     }
@@ -1087,7 +1350,32 @@ const updateLesson = async (req, res) => {
       });
     }
 
-    const lesson = course.lessons.id(req.params.lessonId);
+    let lesson = null;
+    let sectionType = 'sections';
+
+    // Search for lesson in sections
+    if (course.sections && course.sections.length > 0) {
+      for (const section of course.sections) {
+        const found = section.lessons.id(req.params.lessonId);
+        if (found) {
+          lesson = found;
+          sectionType = 'sections';
+          break;
+        }
+      }
+    }
+
+    // Search in sections_kn if not found
+    if (!lesson && course.sections_kn && course.sections_kn.length > 0) {
+      for (const section of course.sections_kn) {
+        const found = section.lessons.id(req.params.lessonId);
+        if (found) {
+          lesson = found;
+          sectionType = 'sections_kn';
+          break;
+        }
+      }
+    }
 
     if (!lesson) {
       return res.status(404).json({
@@ -1096,8 +1384,17 @@ const updateLesson = async (req, res) => {
       });
     }
 
-    // Update lesson
-    Object.assign(lesson, req.body);
+    // Update lesson fields (handling multilingual objects)
+    // Avoid overriding the whole object if we want to preserve other fields
+    Object.keys(req.body).forEach(key => {
+        if (typeof req.body[key] === 'object' && !Array.isArray(req.body[key]) && lesson[key]) {
+            Object.assign(lesson[key], req.body[key]);
+        } else {
+            lesson[key] = req.body[key];
+        }
+    });
+
+    course.markModified(sectionType);
     await course.save();
 
     res.status(200).json({
@@ -1136,7 +1433,35 @@ const deleteLesson = async (req, res) => {
       });
     }
 
-    const lesson = course.lessons.id(req.params.lessonId);
+    let lesson = null;
+    let foundInSection = null;
+    let sectionType = 'sections';
+
+    // Search for lesson in sections
+    if (course.sections && course.sections.length > 0) {
+      for (const section of course.sections) {
+        const found = section.lessons.id(req.params.lessonId);
+        if (found) {
+          lesson = found;
+          foundInSection = section;
+          sectionType = 'sections';
+          break;
+        }
+      }
+    }
+
+    // Search in sections_kn if not found
+    if (!lesson && course.sections_kn && course.sections_kn.length > 0) {
+      for (const section of course.sections_kn) {
+        const found = section.lessons.id(req.params.lessonId);
+        if (found) {
+          lesson = found;
+          foundInSection = section;
+          sectionType = 'sections_kn';
+          break;
+        }
+      }
+    }
 
     if (!lesson) {
       return res.status(404).json({
@@ -1145,12 +1470,20 @@ const deleteLesson = async (req, res) => {
       });
     }
 
-    // Delete lesson video if exists
+    // Delete lesson video for all languages if exists
     if (lesson.videoUrl) {
-      deleteFile(lesson.videoUrl);
+      if (typeof lesson.videoUrl === 'string') {
+        deleteFile(lesson.videoUrl);
+      } else {
+        Object.values(lesson.videoUrl).forEach(url => {
+          if (url) deleteFile(url);
+        });
+      }
     }
 
-    course.lessons.pull(req.params.lessonId);
+    // Remove lesson from section
+    foundInSection.lessons.pull(req.params.lessonId);
+    course.markModified(sectionType);
     await course.save();
 
     res.status(200).json({
@@ -1228,13 +1561,14 @@ const uploadCourseVideo = async (req, res) => {
       });
     }
 
-    // Return the generated file path to the client.
-    // The client should keep this and attach it to the `videoUrl` field when creating/updating the lesson.
+    // Replace backslashes with forward slashes for correct URL formation
+    const videoUrl = req.file.path.replace(/\\/g, '/');
+
     res.status(200).json({
       success: true,
       message: 'Video uploaded successfully',
       data: {
-        videoUrl: '/uploads/videos/' + req.file.filename // req.file.path or filename depending on OS separator; using filename for safer portable front-end path.
+        videoUrl: videoUrl
       }
     });
   } catch (error) {
@@ -1243,6 +1577,43 @@ const uploadCourseVideo = async (req, res) => {
       success: false,
       message: 'Server error while uploading video',
       error: error.message
+    });
+  }
+};
+
+// @desc    Get Cloudinary signature for direct upload
+// @route   GET /api/courses/cloudinary-signature
+// @access  Private (Admin/Instructor)
+const getCloudinarySignature = async (req, res) => {
+  try {
+    const timestamp = Math.round((new Date()).getTime() / 1000);
+    const folder = req.query.folder || 'udemy/videos';
+    // Sign the request
+    const apiSecret = cloudinary.config().api_secret;
+    if (!apiSecret) throw new Error('Cloudinary config missing api_secret. CLOUD_SECRET_KEY might be undefined.');
+
+    const signature = cloudinary.utils.api_sign_request(
+      { timestamp, folder },
+      apiSecret
+    );
+
+    res.status(200).json({
+      success: true,
+      data: {
+        signature,
+        timestamp,
+        cloudName: cloudinary.config().cloud_name,
+        apiKey: cloudinary.config().api_key,
+        folder
+      }
+    });
+  } catch (error) {
+    console.error('Cloudinary signature error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while generating Cloudinary signature',
+      error: error.message,
+      debugConfig: cloudinary.config()
     });
   }
 };
@@ -1270,6 +1641,7 @@ const getCourseList = async (req, res) => {
 };
 
 module.exports = {
+
   createCourse,
   getCourses,
   getCourse,
@@ -1300,5 +1672,6 @@ module.exports = {
   publishCourse,
   validateCourse,
   uploadCourseVideo,
+  getCloudinarySignature,
   getCourseList
 };

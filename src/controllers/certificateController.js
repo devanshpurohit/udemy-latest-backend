@@ -86,10 +86,18 @@ const generateCertificate = async (req, res) => {
     await certificate.populate('course', 'title');
     await certificate.populate('instructor', 'username profile.firstName profile.lastName');
 
+    // 🌐 Localize for response
+    const certObj = certificate.toObject();
+    if (certObj.course && certObj.course.title && typeof certObj.course.title === 'object') {
+        const userLang = req.user.profile?.language || 'English';
+        const langCode = userLang === 'Kannada' ? 'kn' : 'en';
+        certObj.course.title = certObj.course.title[langCode] || certObj.course.title.en || 'Untitled';
+    }
+
     res.status(201).json({
       success: true,
       message: 'Certificate generated successfully',
-      data: { certificate }
+      data: { certificate: certObj }
     });
   } catch (error) {
     console.error('Generate certificate error:', error);
@@ -146,10 +154,20 @@ const getCertificates = async (req, res) => {
 
     const total = await Certificate.countDocuments(filter);
 
+    // 🌐 Localize titles for response
+    const localizedCertificates = certificates.map(cert => {
+        const certObj = cert.toObject();
+        if (certObj.course && certObj.course.title && typeof certObj.course.title === 'object') {
+            // For list, use English or the first available
+            certObj.course.title = certObj.course.title.en || certObj.course.title.kn || 'Untitled';
+        }
+        return certObj;
+    });
+
     res.status(200).json({
       success: true,
       data: {
-        certificates,
+        certificates: localizedCertificates,
         pagination: {
           page: parseInt(page),
           limit: parseInt(limit),
@@ -194,9 +212,17 @@ const getCertificate = async (req, res) => {
       });
     }
 
+    // 🌐 Localize for response
+    const certObj = certificate.toObject();
+    if (certObj.course && certObj.course.title && typeof certObj.course.title === 'object') {
+        const userLang = req.user.profile?.language || 'English';
+        const langCode = userLang === 'Kannada' ? 'kn' : 'en';
+        certObj.course.title = certObj.course.title[langCode] || certObj.course.title.en || 'Untitled';
+    }
+
     res.status(200).json({
       success: true,
-      data: { certificate }
+      data: { certificate: certObj }
     });
   } catch (error) {
     console.error('Get certificate error:', error);

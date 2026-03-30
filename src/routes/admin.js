@@ -39,4 +39,14 @@ router.get('/stats', adminController.getSystemStats);
 // @access  Private (Admin)
 router.get('/statements', statementController.getStatements);
 
+// @route   GET /api/admin/device-requests
+// @desc    Get all device login requests
+// @access  Private (Admin)
+router.get('/device-requests', adminController.getDeviceLoginRequests);
+
+// @route   PUT /api/admin/device-requests/:id
+// @desc    Update device login request status
+// @access  Private (Admin)
+router.put('/device-requests/:id', adminController.updateDeviceLoginRequest);
+
 module.exports = router;

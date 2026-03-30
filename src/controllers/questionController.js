@@ -123,9 +123,13 @@ const getMyQuestions = async (req, res) => {
 // @access  Public
 const getPublicQuestions = async (req, res) => {
   try {
-    // Show all questions by default as requested by the user
-    // "kisi bhi user ne koi bhi question pucha ho usme dikhna ciaye"
-    const questions = await Question.find()
+    // Filter to only show Global FAQs (courseId is null or doesn't exist)
+    const questions = await Question.find({ 
+      $or: [
+        { courseId: null },
+        { courseId: { $exists: false } }
+      ]
+    })
       .populate('user', 'name profile.firstName')
       .sort({ createdAt: -1 });
 
@@ -147,7 +151,7 @@ const getPublicQuestions = async (req, res) => {
 // @access  Private (Admin)
 const answerQuestion = async (req, res) => {
   try {
-    const { answer, isPublic = false } = req.body;
+    const { answer, isPublic = false, category } = req.body;
     const questionId = req.params.id;
 
     if (!answer || answer.trim() === '') {
@@ -169,6 +173,7 @@ const answerQuestion = async (req, res) => {
     question.answer = answer.trim();
     question.status = 'answered';
     question.isPublic = isPublic;
+    if (category) question.category = category;
 
     await question.save();
 
@@ -224,7 +229,7 @@ const getPendingQuestions = async (req, res) => {
 // @access  Private (Admin)
 const createFAQ = async (req, res) => {
   try {
-    const { question, answer, isPublic = true } = req.body;
+    const { question, answer, isPublic = true, category, courseId } = req.body;
     const adminId = req.user.id;
 
     if (!question || !answer) {
@@ -239,7 +244,9 @@ const createFAQ = async (req, res) => {
       question: question.trim(),
       answer: answer.trim(),
       status: 'answered',
-      isPublic: isPublic
+      isPublic: isPublic,
+      category: category || 'General',
+      courseId: courseId || null
     });
 
     await newQuestion.save();
@@ -270,11 +277,98 @@ const createFAQ = async (req, res) => {
   }
 };
 
+// @desc    Get public FAQs for a specific course
+// @route   GET /api/questions/course/:courseId
+// @access  Public
+const getCoursePublicFAQs = async (req, res) => {
+  try {
+    const { courseId } = req.params;
+    const questions = await Question.find({ 
+      courseId, 
+      isPublic: true, 
+      status: 'answered' 
+    }).sort({ createdAt: -1 });
+
+    res.json({
+      success: true,
+      data: questions
+    });
+  } catch (error) {
+    console.error('❌ Get Course Public FAQs Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch course FAQs'
+    });
+  }
+};
+
+// @desc    Get all questions for Admin (Site broad + Course specific)
+// @route   GET /api/questions/admin/all
+// @access  Private (Admin)
+const getQuestionsAdmin = async (req, res) => {
+  try {
+    const questions = await Question.find()
+      .populate('user', 'name email profile.firstName')
+      .populate('courseId', 'title')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // 🌐 Localize populated course titles for Admin
+    const localizedQuestions = questions.map(q => {
+        if (q.courseId && q.courseId.title && typeof q.courseId.title === 'object') {
+            q.courseId.title = q.courseId.title.en || q.courseId.title.kn || 'Untitled Course';
+        }
+        return q;
+    });
+
+    res.json({
+      success: true,
+      data: localizedQuestions
+    });
+  } catch (error) {
+    console.error('❌ Get Questions Admin Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch all questions for admin'
+    });
+  }
+};
+
+// @desc    Delete a question (Admin only)
+// @route   DELETE /api/questions/:id
+// @access  Private (Admin)
+const deleteQuestion = async (req, res) => {
+  try {
+    const question = await Question.findByIdAndDelete(req.params.id);
+
+    if (!question) {
+      return res.status(404).json({
+        success: false,
+        message: 'Question not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Question deleted successfully'
+    });
+  } catch (error) {
+    console.error('❌ Delete Question Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete question'
+    });
+  }
+};
+
 module.exports = {
   createQuestion,
   getMyQuestions,
   getPublicQuestions,
   answerQuestion,
   getPendingQuestions,
-  createFAQ
+  createFAQ,
+  getCoursePublicFAQs,
+  getQuestionsAdmin,
+  deleteQuestion
 };

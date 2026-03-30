@@ -1,6 +1,7 @@
 const express = require('express');
 const { body } = require('express-validator');
 const courseController = require('../controllers/courseController');
+const Course = require('../models/Course');
 const { protect, authorize } = require('../middleware/auth');
 const { uploadSingle } = require('../middleware/upload');
 
@@ -165,6 +166,8 @@ const updateLessonValidation = [
 // Routes
 router.post('/', authorize('admin', 'instructor'), createCourseValidation, courseController.createCourse);
 router.get('/list', courseController.getCourseList);
+// Static GET routes must come before /:id
+router.get('/cloudinary-signature', authorize('admin', 'instructor'), courseController.getCloudinarySignature);
 router.get('/', courseController.getCourses);
 router.get('/:id', courseController.getCourse);
 router.put('/:id', authorize('admin', 'instructor'), updateCourseValidation, courseController.updateCourse);
@@ -287,37 +290,111 @@ router.post('/:id/lessons/:lessonId/upload-video', authorize('admin', 'instructo
       });
     }
 
-    const lesson = course.lessons.id(req.params.lessonId);
+    console.log(`🎬 Video Upload started for course: ${req.params.id}, lesson: ${req.params.lessonId}`);
+    
+    let lesson = null;
+    let foundInSection = null;
+    let sectionType = 'sections';
+
+    // Search in English sections
+    if (course.sections && course.sections.length > 0) {
+      console.log(`🔍 Searching in ${course.sections.length} English sections...`);
+      for (const section of course.sections) {
+        // Use manual find as a robust fallback for .id()
+        const found = section.lessons.find(l => l._id && l._id.toString() === req.params.lessonId);
+        if (found) {
+          console.log(`✅ Found lesson in section: ${section._id}`);
+          lesson = found;
+          foundInSection = section;
+          sectionType = 'sections';
+          break;
+        }
+      }
+    }
+
+    // Search in Kannada sections if not found
+    if (!lesson && course.sections_kn && course.sections_kn.length > 0) {
+      console.log(`🔍 Searching in ${course.sections_kn.length} Kannada sections...`);
+      for (const section of course.sections_kn) {
+        const found = section.lessons.find(l => l._id && l._id.toString() === req.params.lessonId);
+        if (found) {
+          console.log(`✅ Found lesson in Kannada section: ${section._id}`);
+          lesson = found;
+          foundInSection = section;
+          sectionType = 'sections_kn';
+          break;
+        }
+      }
+    }
 
     if (!lesson) {
+      console.error('❌ Lesson not found in any section');
       return res.status(404).json({
         success: false,
-        message: 'Lesson not found'
+        message: 'Lesson not found in any section'
       });
     }
 
-    // Delete old video if exists
-    if (lesson.videoUrl) {
-      const { deleteFile } = require('../middleware/upload');
-      deleteFile(lesson.videoUrl);
+    // Get language from body or query (default to 'en')
+    const lang = req.body.lang || req.query.lang || 'en';
+    console.log(`🌐 Language: ${lang}`);
+    
+    // Initialize videoUrl object if it's a legacy string or doesn't exist
+    if (!lesson.videoUrl || typeof lesson.videoUrl === 'string') {
+      const oldUrl = typeof lesson.videoUrl === 'string' ? lesson.videoUrl : '';
+      lesson.videoUrl = { en: oldUrl, kn: '' };
     }
 
-    // Update lesson video
-    lesson.videoUrl = `/uploads/videos/${req.file.filename}`;
+    // Delete old video for this language if it exists
+    if (lesson.videoUrl[lang]) {
+      const { deleteFile } = require('../middleware/upload');
+      try {
+        console.log(`🗑️ Deleting old video: ${lesson.videoUrl[lang]}`);
+        deleteFile(lesson.videoUrl[lang]);
+      } catch (err) {
+        console.warn('Could not delete old video file:', err.message);
+      }
+    }
+
+    // Update lesson video for specific language
+    // 🚀 Upload to Cloudinary
+    console.log(`🚀 Uploading to Cloudinary for ${lang}...`);
+    const cloudinary = require('../config/cloudinary');
+    const fs = require('fs');
+    const result = await cloudinary.uploader.upload(req.file.path, {
+      resource_type: "video",
+      folder: "udemy/lessons"
+    });
+
+    // Cleanup: Delete from local disk after successful upload to Cloudinary
+    if (req.file.path) {
+      fs.unlink(req.file.path, (err) => {
+        if (err) console.error('Error deleting local video after Cloudinary upload:', err);
+      });
+    }
+
+    const newPath = result.secure_url;
+    console.log(`📤 New Cloudinary video path: ${newPath}`);
+    lesson.videoUrl[lang] = newPath;
+    
+    // Mark as modified to ensure Mongoose saves the nested change
+    course.markModified(sectionType);
     await course.save();
+    console.log('🏁 Save successful');
 
     res.status(200).json({
       success: true,
-      message: 'Video uploaded successfully',
+      message: `Video uploaded successfully to Cloudinary for ${lang}`,
       data: {
-        videoUrl: `/uploads/videos/${req.file.filename}`
+        videoUrl: lesson.videoUrl
       }
     });
   } catch (error) {
     console.error('Upload video error:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error while uploading video'
+      message: 'Server error while uploading video to Cloudinary',
+      error: error.message
     });
   }
 });

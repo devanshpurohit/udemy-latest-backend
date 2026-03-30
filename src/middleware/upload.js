@@ -150,8 +150,19 @@ const uploadMultiple = (fieldName, maxCount = 5) => {
 // Delete file utility
 const deleteFile = (filePath) => {
   try {
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
+    if (!filePath) return false;
+    
+    // Resolve relative paths (e.g., /uploads/...) to absolute paths
+    let absolutePath = filePath;
+    if (filePath.startsWith('/')) {
+      absolutePath = path.join(__dirname, '..', filePath);
+    } else if (!path.isAbsolute(filePath)) {
+      absolutePath = path.join(__dirname, '..', 'uploads', filePath);
+    }
+
+    if (fs.existsSync(absolutePath)) {
+      fs.unlinkSync(absolutePath);
+      console.log(`Successfully deleted file: ${absolutePath}`);
       return true;
     }
     return false;
@@ -161,8 +172,46 @@ const deleteFile = (filePath) => {
   }
 };
 
+// Save base64 data to disk
+const saveBase64ToDisk = (base64Data, type = 'thumbnails') => {
+  try {
+    if (!base64Data || !base64Data.includes(';base64,')) return base64Data;
+
+    const matches = base64Data.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+    if (!matches || matches.length !== 3) return base64Data;
+
+    const mimeType = matches[1];
+    const data = Buffer.from(matches[2], 'base64');
+    
+    // Determine extension from mime type
+    let extension = '.jpg';
+    if (mimeType.includes('png')) extension = '.png';
+    else if (mimeType.includes('webp')) extension = '.webp';
+    else if (mimeType.includes('gif')) extension = '.gif';
+    else if (mimeType.includes('mp4')) extension = '.mp4';
+    else if (mimeType.includes('webm')) extension = '.webm';
+    else if (mimeType.includes('pdf')) extension = '.pdf';
+
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const filename = `b64-${uniqueSuffix}${extension}`;
+    
+    const uploadPath = path.resolve(__dirname, '..', 'uploads', type);
+    ensureUploadDir(uploadPath);
+    
+    const fullPath = path.join(uploadPath, filename);
+    fs.writeFileSync(fullPath, data);
+    
+    console.log(`✅ Base64 saved to disk: /uploads/${type}/${filename}`);
+    return `/uploads/${type}/${filename}`;
+  } catch (error) {
+    console.error('Error saving base64 to disk:', error);
+    return base64Data;
+  }
+};
+
 module.exports = {
   uploadSingle,
   uploadMultiple,
-  deleteFile
+  deleteFile,
+  saveBase64ToDisk
 };

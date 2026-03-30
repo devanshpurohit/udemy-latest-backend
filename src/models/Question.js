@@ -25,6 +25,15 @@ const questionSchema = new mongoose.Schema({
   isPublic: {
     type: Boolean,
     default: false
+  },
+  category: {
+    type: String,
+    default: 'General'
+  },
+  courseId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Course',
+    required: false
   }
 }, {
   timestamps: true

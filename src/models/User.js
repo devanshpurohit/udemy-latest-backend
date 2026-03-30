@@ -58,10 +58,8 @@ const progressSchema = new mongoose.Schema({
 const userSchema = new mongoose.Schema({
   username: {
     type: String,
-    required: [true, 'Username is required'],
     unique: true,
-    trim: true,
-    minlength: [3, 'Username must be at least 3 characters long']
+    trim: true
   },
   email: {
     type: String,
@@ -110,6 +108,11 @@ const userSchema = new mongoose.Schema({
       default: "/boy.png"
     }
   },
+  languageHistory: [{
+    language: String,
+    changedAt: { type: Date, default: Date.now },
+    changedBy: { type: String, enum: ['user', 'admin'], default: 'user' }
+  }],
   billing: {
     fullName: {
       type: String,
@@ -143,6 +146,10 @@ const userSchema = new mongoose.Schema({
   isActive: {
     type: Boolean,
     default: true
+  },
+  currentDeviceId: {
+    type: String,
+    default: null
   },
   lastLogin: {
     type: Date
@@ -213,6 +220,7 @@ userSchema.methods.getProfile = function() {
     email: this.email,
     role: this.role,
     profile: this.profile,
+    languageHistory: this.languageHistory,
     isActive: this.isActive,
     emailVerified: this.emailVerified,
     createdAt: this.createdAt

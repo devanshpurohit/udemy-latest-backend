@@ -1,4 +1,5 @@
 const Feedback = require('../models/Feedback');
+const Review = require('../models/Review');
 
 // @desc    Submit new feedback
 // @route   POST /api/feedback
@@ -38,12 +39,20 @@ exports.submitFeedback = async (req, res) => {
   }
 };
 
-// @desc    Get all approved feedbacks
+// @desc    Get all approved feedbacks & reviews for homepage
 // @route   GET /api/feedback/approved
 // @access  Public
 exports.getApprovedFeedbacks = async (req, res) => {
   try {
-    const feedbacks = await Feedback.find({ isApproved: true }).sort('-createdAt');
+    // ONLY return feedback created by the admin for the homepage
+    const feedbacks = await Feedback.find({ 
+      isAdminCreated: true,
+      isApproved: true 
+    }).sort('-createdAt').lean();
+    
+    // REMOVED Review integration from homepage feedback list
+    // Only admin-added feedback should be displayed here
+
     res.status(200).json({
       success: true,
       data: feedbacks
@@ -122,7 +131,8 @@ exports.adminCreateFeedback = async (req, res) => {
       comment,
       userRole: userRole || 'Student',
       userImage: userImage || '/feedback_01.jpg',
-      isApproved: isApproved !== undefined ? isApproved : true
+      isApproved: isApproved !== undefined ? isApproved : true,
+      isAdminCreated: true
     });
 
     res.status(201).json({

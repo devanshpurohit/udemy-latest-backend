@@ -156,9 +156,46 @@ const getMyCourses = async (req, res) => {
       return res.status(401).json({ success: false, message: 'User not found' });
     }
 
+    // 🌐 Localize for Student
+    const userLang = user.profile?.language || 'English';
+    const langCode = userLang === 'Kannada' ? 'kn' : 'en';
+
+    const localizedCourses = await Promise.all((user.purchasedCourses || []).map(async course => {
+        const courseObj = course.toObject();
+        
+        // Localize content
+        if (courseObj.title && typeof courseObj.title === 'object') {
+            courseObj.title = courseObj.title[langCode] || courseObj.title.en || 'Untitled';
+        }
+        if (courseObj.description && typeof courseObj.description === 'object') {
+            courseObj.description = courseObj.description[langCode] || courseObj.description.en || '';
+        }
+
+        // Calculate progress
+        let totalLessonsCount = course.totalLessons || 0;
+        if (totalLessonsCount === 0) {
+            if (course.sections && course.sections.length > 0) {
+                totalLessonsCount = course.sections.reduce((t, s) => t + (s.lessons?.length || 0), 0);
+            } else if (course.lessons && course.lessons.length > 0) {
+                totalLessonsCount = course.lessons.length;
+            }
+        }
+
+        const progressEntry = (user.progress || []).find(p => p.courseId.toString() === course._id.toString());
+        const completedLessonsCount = progressEntry?.completedLessons?.length || 0;
+        const progressPercentage = totalLessonsCount > 0 ? Math.round((completedLessonsCount / totalLessonsCount) * 100) : 0;
+
+        courseObj.totalLessonsCount = totalLessonsCount;
+        courseObj.completedLessonsCount = completedLessonsCount;
+        courseObj.progressPercentage = progressPercentage;
+        courseObj.isPurchased = true;
+
+        return courseObj;
+    }));
+
     return res.json({
       success: true,
-      courses: user.purchasedCourses || []
+      courses: localizedCourses
     });
   } catch (error) {
     console.error('Get my courses error:', error);

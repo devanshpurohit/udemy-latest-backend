@@ -35,6 +35,10 @@ const feedbackSchema = new mongoose.Schema({
   userImage: {
     type: String,
     default: '/boy.png'
+  },
+  isAdminCreated: {
+    type: Boolean,
+    default: false
   }
 }, { timestamps: true });
 
